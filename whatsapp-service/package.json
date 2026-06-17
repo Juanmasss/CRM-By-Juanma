@@ -1,0 +1,13 @@
+{
+  "name": "crm-whatsapp-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CRM by Juanma — proceso Baileys que mantiene viva la conexión WhatsApp Web (puerto 4100).",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  }
+}
