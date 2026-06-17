@@ -2,17 +2,21 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border border-border/80 bg-card/85 p-5 text-card-foreground shadow-2xl shadow-black/20",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "rounded-lg border border-border/80 bg-card/85 p-5 text-card-foreground shadow-2xl shadow-black/20",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
+Card.displayName = "Card";
 
 export function StatCard({
   label,
@@ -44,3 +48,5 @@ export function StatCard({
     </Card>
   );
 }
+
+export { Card };

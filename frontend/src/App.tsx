@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
 
 import { AppLayout } from "@/layouts/AppLayout";
 import { HomePage } from "@/pages/HomePage";
+import { LeadsPage } from "@/pages/LeadsPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 const queryClient = new QueryClient();
@@ -13,7 +14,7 @@ const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomePage /> },
-      { path: "leads", element: <PlaceholderPage title="Leads" /> },
+      { path: "leads", element: <LeadsPage /> },
       { path: "contacts", element: <PlaceholderPage title="Contactos" /> },
       { path: "companies", element: <PlaceholderPage title="Empresas" /> },
       { path: "activities", element: <PlaceholderPage title="Actividades" /> },

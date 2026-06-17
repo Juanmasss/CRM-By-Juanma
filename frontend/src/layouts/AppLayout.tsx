@@ -10,10 +10,12 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { NavLink, Outlet, useSearchParams } from "react-router-dom";
 
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { getPipelines } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const routes = [
@@ -28,6 +30,20 @@ const routes = [
 ];
 
 export function AppLayout() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedPipelineId = searchParams.get("pipelineId") ?? "";
+  const { data: pipelines = [], isLoading } = useQuery({
+    queryKey: ["pipelines"],
+    queryFn: getPipelines,
+    staleTime: 30_000,
+  });
+
+  function handlePipelineChange(pipelineId: string) {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("pipelineId", pipelineId);
+    setSearchParams(nextParams);
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-border/80 bg-card/95 px-4 py-5 backdrop-blur">
@@ -75,12 +91,19 @@ export function AppLayout() {
         <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-border/70 bg-background/85 px-6 backdrop-blur">
           <select
             className="h-9 rounded-md border border-input bg-secondary px-3 text-sm text-foreground outline-none ring-offset-background transition focus:ring-2 focus:ring-ring"
-            defaultValue=""
+            value={selectedPipelineId}
+            onChange={(event) => handlePipelineChange(event.target.value)}
             aria-label="Pipeline"
+            disabled={isLoading || pipelines.length === 0}
           >
-            <option value="" disabled>
-              Pipeline
+            <option value="">
+              {isLoading ? "Cargando pipelines" : "Pipeline"}
             </option>
+            {pipelines.map((pipeline) => (
+              <option key={pipeline.id} value={pipeline.id}>
+                {pipeline.name}
+              </option>
+            ))}
           </select>
 
           <div className="relative max-w-md flex-1">
