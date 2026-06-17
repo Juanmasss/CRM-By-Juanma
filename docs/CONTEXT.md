@@ -8,7 +8,7 @@ PREGUNTA antes de inventar.
 "CRM by Juanma": CRM propio para e-commerce en Colombia, estilo Kommo. Gestiona leads en un
 embudo Kanban, contactos, empresas, actividades, reportes, un salesbot tipo Kommo y el chat
 de WhatsApp. La mensajería usa Baileys (WhatsApp Web por QR), NO la API oficial de Meta.
-Las respuestas automáticas de texto usan la API de Perplexity (Sonar). NO uses la marca "Flux"
+Las respuestas automáticas de texto usan la API de OpenRouter. NO uses la marca "Flux"
 en ningún lado.
 
 ## Stack fijo (no cambiar)
@@ -17,7 +17,7 @@ en ningún lado.
 - backend/  : Express + TypeScript + Prisma ORM. Postgres en Supabase. Es el cerebro.
 - whatsapp-service/ : proceso Node con @whiskeysockets/baileys (7.x estable o 6.7.22 legacy;
               NUNCA < 6.7.22). Mantiene viva la conexión WA Web. Puerto 4100.
-- Modo IA: Perplexity (openai SDK con baseURL=PERPLEXITY_BASE_URL, modelo PERPLEXITY_MODEL).
+- Modo IA: OpenRouter (openai SDK con baseURL=OPENROUTER_BASE_URL, modelo OPENROUTER_MODEL).
 - Secretos SIEMPRE en .env. Si necesitas una variable nueva, decláralo en el commit.
 
 ## Dueños de carpetas (regla anti-conflicto)
@@ -33,7 +33,7 @@ Claves de mensajería:
 - channels.type: 'whatsapp'|'instagram'|'facebook'|'tiktok' (por ahora solo whatsapp activo).
 - conversations: { id, lead_id, contact_id, channel_id, external_thread_id (wa jid),
   status 'open'|'closed', mode 'bot'|'ai'|'human', last_message_at }.
-  -> bot = salesbot de flujo; ai = asistente Perplexity; human = la persona responde.
+  -> bot = salesbot de flujo; ai = asistente OpenRouter; human = la persona responde.
 - messages: { id, conversation_id, direction 'inbound'|'outbound',
   sender_type 'contact'|'agent'|'bot', sender_name, body, message_type, media_url,
   external_message_id, status 'sent'|'delivered'|'read'|'failed', created_at }.
