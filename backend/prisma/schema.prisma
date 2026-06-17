@@ -1,0 +1,420 @@
+// CRM by Juanma — Prisma schema (única fuente de verdad del modelo de datos).
+// Postgres en Supabase: DATABASE_URL = pooler (pgbouncer), DIRECT_URL = directo (migraciones).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum UserRole {
+  admin
+  agent
+}
+
+enum StageType {
+  incoming
+  normal
+  won
+  lost
+}
+
+enum LeadStatus {
+  open
+  won
+  lost
+}
+
+enum CustomFieldEntity {
+  lead
+  contact
+}
+
+enum CustomFieldType {
+  text
+  number
+  select
+  date
+}
+
+enum ChannelType {
+  whatsapp
+  instagram
+  facebook
+  tiktok
+}
+
+enum ConversationStatus {
+  open
+  closed
+}
+
+// bot = salesbot de flujo · ai = asistente Perplexity · human = persona del CRM
+enum ConversationMode {
+  bot
+  ai
+  human
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+// contact = cliente · agent = humano del CRM · bot = respuesta automática
+enum SenderType {
+  contact
+  agent
+  bot
+}
+
+enum MessageType {
+  text
+  image
+  audio
+  video
+  file
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  read
+  failed
+}
+
+enum TaskType {
+  task
+  call
+  email
+  meeting
+  whatsapp
+}
+
+enum BotStatus {
+  active
+  paused
+}
+
+enum BotSessionStatus {
+  active
+  completed
+  abandoned
+}
+
+// ─────────────────────────── Models ───────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  role      UserRole @default(agent)
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  responsibleLeads Lead[] @relation("LeadResponsible")
+  assignedTasks    Task[] @relation("TaskAssignee")
+  notes            Note[]
+
+  @@map("users")
+}
+
+model Pipeline {
+  id        String   @id @default(uuid())
+  name      String
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stages Stage[]
+  leads  Lead[]
+
+  @@map("pipelines")
+}
+
+model Stage {
+  id         String    @id @default(uuid())
+  pipelineId String    @map("pipeline_id")
+  name       String
+  color      String?
+  position   Int       @default(0)
+  type       StageType @default(normal)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  leads    Lead[]
+
+  @@index([pipelineId])
+  @@map("stages")
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  website   String?
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  contacts Contact[]
+  leads    Lead[]
+
+  @@map("companies")
+}
+
+model Contact {
+  id            String       @id @default(uuid())
+  name          String
+  phone         String?
+  email         String?
+  channel       ChannelType?
+  channelUserId String?      @map("channel_user_id")
+  avatarUrl     String?      @map("avatar_url")
+  companyId     String?      @map("company_id")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  leads         Lead[]
+  conversations Conversation[]
+
+  @@index([companyId])
+  @@index([channel, channelUserId])
+  @@map("contacts")
+}
+
+model Lead {
+  id                String     @id @default(uuid())
+  name              String
+  pipelineId        String     @map("pipeline_id")
+  stageId           String     @map("stage_id")
+  contactId         String?    @map("contact_id")
+  companyId         String?    @map("company_id")
+  responsibleUserId String?    @map("responsible_user_id")
+  value             Decimal    @default(0) @db.Decimal(14, 2)
+  status            LeadStatus @default(open)
+  source            String?
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  closedAt          DateTime?  @map("closed_at")
+
+  pipeline        Pipeline               @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stage           Stage                  @relation(fields: [stageId], references: [id])
+  contact         Contact?               @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  company         Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  responsible     User?                  @relation("LeadResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  tags            LeadTag[]
+  customFieldVals LeadCustomFieldValue[]
+  conversations   Conversation[]
+  notes           Note[]
+  tasks           Task[]
+  botSessions     BotSession[]
+
+  @@index([pipelineId])
+  @@index([stageId])
+  @@index([contactId])
+  @@index([responsibleUserId])
+  @@map("leads")
+}
+
+model Tag {
+  id    String  @id @default(uuid())
+  name  String  @unique
+  color String?
+
+  leads LeadTag[]
+
+  @@map("tags")
+}
+
+model LeadTag {
+  leadId String @map("lead_id")
+  tagId  String @map("tag_id")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([leadId, tagId])
+  @@index([tagId])
+  @@map("lead_tags")
+}
+
+model CustomFieldDefinition {
+  id       String            @id @default(uuid())
+  entity   CustomFieldEntity
+  code     String
+  label    String
+  type     CustomFieldType   @default(text)
+  options  Json?
+  position Int               @default(0)
+
+  values LeadCustomFieldValue[]
+
+  @@unique([entity, code])
+  @@map("custom_field_definitions")
+}
+
+model LeadCustomFieldValue {
+  id      String  @id @default(uuid())
+  leadId  String  @map("lead_id")
+  fieldId String  @map("field_id")
+  value   String?
+
+  lead  Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  field CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, fieldId])
+  @@index([fieldId])
+  @@map("lead_custom_field_values")
+}
+
+model Channel {
+  id        String      @id @default(uuid())
+  type      ChannelType
+  name      String
+  config    Json?
+  isActive  Boolean     @default(true) @map("is_active")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  conversations Conversation[]
+
+  @@map("channels")
+}
+
+model Conversation {
+  id               String             @id @default(uuid())
+  leadId           String?            @map("lead_id")
+  contactId        String?            @map("contact_id")
+  channelId        String             @map("channel_id")
+  externalThreadId String?            @map("external_thread_id")
+  status           ConversationStatus @default(open)
+  mode             ConversationMode   @default(human)
+  lastMessageAt    DateTime?          @map("last_message_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  botSessions BotSession[]
+
+  @@unique([channelId, externalThreadId])
+  @@index([leadId])
+  @@index([contactId])
+  @@map("conversations")
+}
+
+model Message {
+  id                String           @id @default(uuid())
+  conversationId    String           @map("conversation_id")
+  direction         MessageDirection
+  senderType        SenderType       @map("sender_type")
+  senderName        String?          @map("sender_name")
+  body              String?
+  messageType       MessageType      @default(text) @map("message_type")
+  mediaUrl          String?          @map("media_url")
+  externalMessageId String?          @map("external_message_id")
+  status            MessageStatus    @default(sent)
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  leadId    String   @map("lead_id")
+  userId    String?  @map("user_id")
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  lead Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([leadId])
+  @@map("notes")
+}
+
+model Task {
+  id               String    @id @default(uuid())
+  leadId           String?   @map("lead_id")
+  type             TaskType  @default(task)
+  title            String
+  description      String?
+  dueAt            DateTime? @map("due_at")
+  completedAt      DateTime? @map("completed_at")
+  assignedToUserId String?   @map("assigned_to_user_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  lead       Lead? @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedTo User? @relation("TaskAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([leadId])
+  @@index([assignedToUserId])
+  @@map("tasks")
+}
+
+model Bot {
+  id             String    @id @default(uuid())
+  name           String
+  status         BotStatus @default(active)
+  triggerType    String?   @map("trigger_type")
+  triggerConfig  Json?     @map("trigger_config")
+  conversionRate Float     @default(0) @map("conversion_rate")
+  launches       Int       @default(0)
+  activeSessions Int       @default(0) @map("active_sessions")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  flow     BotFlow?
+  sessions BotSession[]
+
+  @@map("bots")
+}
+
+model BotFlow {
+  id        String   @id @default(uuid())
+  botId     String   @unique @map("bot_id")
+  graph     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("bot_flows")
+}
+
+model BotSession {
+  id             String           @id @default(uuid())
+  botId          String           @map("bot_id")
+  leadId         String?          @map("lead_id")
+  conversationId String?          @map("conversation_id")
+  currentNodeId  String?          @map("current_node_id")
+  context        Json?
+  status         BotSessionStatus @default(active)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  bot          Bot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  lead         Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([botId])
+  @@index([leadId])
+  @@index([conversationId])
+  @@map("bot_sessions")
+}
