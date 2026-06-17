@@ -41,4 +41,15 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 18% 12%, hsl(var(--primary) / 0.18), transparent 28rem),
+      linear-gradient(135deg, hsl(240 10% 4%) 0%, hsl(260 18% 7%) 48%, hsl(240 10% 4%) 100%);
+    z-index: -1;
+  }
 }

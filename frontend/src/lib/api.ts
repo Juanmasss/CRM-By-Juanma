@@ -34,3 +34,9 @@ export interface HealthResponse {
 export function getHealth() {
   return apiFetch<HealthResponse>("/health");
 }
+
+export function useApi() {
+  return {
+    fetch: apiFetch,
+  };
+}
