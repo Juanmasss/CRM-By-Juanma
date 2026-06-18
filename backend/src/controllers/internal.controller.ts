@@ -9,6 +9,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { runAiReply } from "../lib/aiReply.js";
+import { runBotForConversation } from "../lib/botEngine.js";
 import { badRequest } from "../lib/errors.js";
 import { sendData, validate } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
@@ -125,8 +126,9 @@ export async function whatsappIncoming(req: Request, res: Response) {
   // al servicio de WhatsApp ni propaga errores). 'human' (por defecto): no hace nada automático.
   if (conversation.mode === ConversationMode.ai) {
     void runAiReply({ conversationId: conversation.id });
+  } else if (conversation.mode === ConversationMode.bot) {
+    void runBotForConversation({ conversationId: conversation.id });
   }
-  // TODO(B9): if (conversation.mode === 'bot') => motor de flujo del salesbot.
 
   sendData(res, { conversationId: conversation.id, messageId: message.id }, 201);
 }

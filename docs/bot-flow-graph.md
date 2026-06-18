@@ -97,3 +97,46 @@ Ejemplo de nodo `actions`:
   "edges": []
 }
 ```
+
+## Ejecución del flujo (motor del "modo bot")
+
+El motor (`backend/src/lib/botEngine.ts`) recorre el grafo nodo a nodo siguiendo los `edges`
+hasta llegar a un nodo que **espera respuesta** (`message` con opciones, `list_message`,
+`validation`, `pause`) o a un `stop`. El estado se guarda en `bot_sessions`
+(`current_node_id`, `context`).
+
+> **Botones/listas como texto.** El `whatsapp-service` envía sólo texto y los mensajes
+> interactivos nativos de WhatsApp vía Baileys son poco fiables. Por eso las opciones se
+> renderizan como una lista numerada (`1. …`, `2. …`) y la respuesta del cliente se empareja por
+> número, por `id` o por título.
+
+### Convenciones de `data` que lee el motor
+
+| Tipo            | `data` esperado                                                                                  | Ramas (`sourceHandle`) |
+| --------------- | ------------------------------------------------------------------------------------------------ | ---------------------- |
+| `start_salesbot`| —                                                                                                | edge por defecto       |
+| `message`       | `{ text, buttons?: [{id,title}] }` (también admite `options`)                                     | el `id` del botón elegido; sin botones, edge por defecto |
+| `list_message`  | `{ text, rows?: [{id,title}] }` o `{ text, sections:[{rows:[{id,title}]}] }`                       | el `id` de la fila      |
+| `condition`     | `{ source?: "lastMessage"\|"context", key?, operator: equals\|not_equals\|contains\|exists\|empty, value? }` | `"true"` / `"false"` |
+| `validation`    | `{ rule: email\|phone\|number\|regex\|nonempty, pattern?, saveAs? }` (valida el siguiente mensaje) | `"valid"` / `"invalid"` |
+| `pause`         | —                                                                                                | edge por defecto (al recibir respuesta) |
+| `goto`          | `{ targetNodeId }` (o edge por defecto)                                                          | —                      |
+| `actions`       | `{ actions: Action[] }` (ver tabla de acciones)                                                  | edge por defecto       |
+| `stop`          | —                                                                                                | termina la sesión      |
+
+`saveAs` (en `message`/`list_message`/`validation`) guarda el valor elegido/escrito en
+`context[saveAs]`, accesible luego desde `condition` con `source:"context"`.
+
+Los tipos `reaction`, `comment`, `internal_message`, `subscribe_meta`, `custom_code`, `widget` y
+`round_robin` aún no tienen comportamiento propio: el motor los trata como paso a través.
+
+### Disparadores (`bots.trigger_type` / `trigger_config`)
+
+- `manual` / `first_message` / `any` / vacío → el bot puede arrancar con cualquier mensaje.
+- `keyword` → arranca sólo si el texto entrante contiene alguna de `trigger_config.keywords[]`.
+
+### Contadores
+
+Al crear una sesión se incrementan `launches` y `active_sessions`. Al terminar (`stop`) se
+decrementa `active_sessions`, la sesión queda `completed` y `conversion_rate` se recalcula como
+`sesiones completadas / launches`.
