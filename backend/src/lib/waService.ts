@@ -41,6 +41,7 @@ export async function getConnection(): Promise<{
   connected: boolean;
   phoneNumber: string | null;
   qrPng: string | null;
+  awaitingQr: boolean;
 }> {
   const { url, secret } = svc();
   try {
@@ -48,12 +49,33 @@ export async function getConnection(): Promise<{
       fetch(`${url}/status`, { headers: headers(secret) }),
       fetch(`${url}/qr`, { headers: headers(secret) }),
     ]);
-    const status = (await statusRes.json()) as { connected: boolean; phoneNumber: string | null };
+    const status = (await statusRes.json()) as {
+      connected: boolean;
+      phoneNumber: string | null;
+      awaitingQr?: boolean;
+    };
     const qr = (await qrRes.json()) as { qrPng: string | null };
-    return { connected: status.connected, phoneNumber: status.phoneNumber, qrPng: qr.qrPng };
+    return {
+      connected: status.connected,
+      phoneNumber: status.phoneNumber,
+      qrPng: qr.qrPng,
+      awaitingQr: Boolean(status.awaitingQr),
+    };
   } catch {
     // Si el servicio está caído, lo reportamos como desconectado en vez de romper.
-    return { connected: false, phoneNumber: null, qrPng: null };
+    return { connected: false, phoneNumber: null, qrPng: null, awaitingQr: false };
+  }
+}
+
+// Proxy de POST /connect del servicio -> pide generar un QR (ventana de 5 min).
+export async function connectService(): Promise<{ ok: boolean }> {
+  const { url, secret } = svc();
+  try {
+    const res = await fetch(`${url}/connect`, { method: "POST", headers: headers(secret) });
+    if (!res.ok) throw new Error("bad status");
+    return (await res.json()) as { ok: boolean };
+  } catch {
+    throw new HttpError(502, "No se pudo iniciar la vinculación de WhatsApp");
   }
 }
 

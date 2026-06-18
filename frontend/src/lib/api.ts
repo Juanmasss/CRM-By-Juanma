@@ -442,6 +442,7 @@ export interface WhatsappConnectionResponse {
   connected: boolean;
   phoneNumber?: string | null;
   qrPng?: string | null;
+  awaitingQr?: boolean;
 }
 
 export interface Lead {
@@ -672,7 +673,21 @@ export async function getWhatsappConnection() {
     return await apiFetch<WhatsappConnectionResponse>("/api/whatsapp/connection");
   } catch (error) {
     if (error instanceof ApiError || error instanceof TypeError) {
-      return { connected: false, phoneNumber: null, qrPng: null };
+      return { connected: false, phoneNumber: null, qrPng: null, awaitingQr: false };
+    }
+    throw error;
+  }
+}
+
+export async function connectWhatsapp() {
+  try {
+    return await apiFetch<{ ok: boolean }>("/api/whatsapp/connect", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  } catch (error) {
+    if (error instanceof ApiError || error instanceof TypeError) {
+      return { ok: false };
     }
     throw error;
   }

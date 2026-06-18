@@ -25,7 +25,13 @@ export function createServer() {
     res.json(wa.getQr());
   });
 
-  // POST /disconnect -> cierra sesión, borra ./auth y vuelve a estado de QR.
+  // POST /connect -> el usuario pide vincular: abre la ventana de QR (5 min) y genera el código.
+  app.post("/connect", async (_req, res) => {
+    await wa.requestQr();
+    res.json({ ok: true });
+  });
+
+  // POST /disconnect -> cierra sesión, borra ./auth y queda inactivo (no auto-genera QR).
   app.post("/disconnect", async (_req, res) => {
     await wa.disconnect();
     res.json({ ok: true });

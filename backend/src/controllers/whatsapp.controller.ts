@@ -1,12 +1,18 @@
 import type { Request, Response } from "express";
 
 import { sendData } from "../lib/http.js";
-import { disconnectService, getConnection } from "../lib/waService.js";
+import { connectService, disconnectService, getConnection } from "../lib/waService.js";
 
 // GET /api/whatsapp/connection — proxy de /status + /qr del servicio.
 export async function getWhatsappConnection(_req: Request, res: Response) {
   const connection = await getConnection();
   sendData(res, connection);
+}
+
+// POST /api/whatsapp/connect — proxy de /connect: pide generar un QR (ventana de 5 min).
+export async function postWhatsappConnect(_req: Request, res: Response) {
+  const result = await connectService();
+  sendData(res, result);
 }
 
 // POST /api/whatsapp/disconnect — proxy de /disconnect del servicio.

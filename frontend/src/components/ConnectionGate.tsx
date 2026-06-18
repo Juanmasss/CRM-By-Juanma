@@ -1,20 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Loader2, LogOut, MessageCircle, QrCode } from "lucide-react";
+import { CheckCircle2, Loader2, LogOut, MessageCircle, QrCode, RefreshCw } from "lucide-react";
 import { type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { disconnectWhatsapp, getWhatsappConnection } from "@/lib/api";
+import { connectWhatsapp, disconnectWhatsapp, getWhatsappConnection } from "@/lib/api";
 
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { data, isFetching } = useQuery({
     queryKey: ["whatsapp-connection"],
     queryFn: getWhatsappConnection,
-    refetchInterval: 2_000,
+    // Mientras no esté conectado, refrescamos rápido (para ver el QR / estado al instante);
+    // ya conectado, no hace falta machacar tan seguido.
+    refetchInterval: (query) => (query.state.data?.connected ? 10_000 : 2_000),
   });
 
-  const connection = data ?? { connected: false, phoneNumber: null, qrPng: null };
+  const connection = data ?? { connected: false, phoneNumber: null, qrPng: null, awaitingQr: false };
+
+  const connectMutation = useMutation({
+    mutationFn: connectWhatsapp,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["whatsapp-connection"] });
+    },
+  });
 
   const disconnectMutation = useMutation({
     mutationFn: disconnectWhatsapp,
@@ -31,23 +40,34 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   }
 
   if (!connection.connected) {
+    const hasQr = Boolean(connection.qrPng);
+    const generating = connection.awaitingQr || connectMutation.isPending;
+
     return (
       <div className="space-y-6">
         <ConnectionHeader isFetching={isFetching} />
         <Card className="mx-auto grid max-w-5xl gap-8 p-6 lg:grid-cols-[minmax(20rem,0.9fr)_minmax(22rem,1.1fr)] lg:p-8">
           <div className="flex min-h-96 items-center justify-center rounded-lg border border-border bg-background/60 p-5">
-            {connection.qrPng ? (
+            {hasQr ? (
               <img
                 className="aspect-square w-full max-w-sm rounded-lg border border-border bg-white p-4"
-                src={connection.qrPng}
+                src={connection.qrPng ?? undefined}
                 alt="QR para conectar WhatsApp"
               />
+            ) : generating ? (
+              <div className="flex aspect-square w-full max-w-sm flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/60 p-8 text-center">
+                <Loader2 className="h-14 w-14 animate-spin text-primary" />
+                <p className="mt-4 text-sm font-medium">Generando QR…</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  En unos segundos aparecerá el código para escanear.
+                </p>
+              </div>
             ) : (
               <div className="flex aspect-square w-full max-w-sm flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/60 p-8 text-center">
                 <QrCode className="h-14 w-14 text-primary" />
-                <p className="mt-4 text-sm font-medium">Esperando QR</p>
+                <p className="mt-4 text-sm font-medium">Sin QR activo</p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Cuando el servicio responda, el código aparecerá aquí automáticamente.
+                  Pulsa «Generar QR» para iniciar la vinculación.
                 </p>
               </div>
             )}
@@ -81,8 +101,18 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
                 Escanea este código. El chat abrirá automáticamente cuando la conexión esté lista.
               </li>
             </ol>
-            <div className="mt-6 rounded-md border border-border bg-background/60 p-3 text-xs text-muted-foreground">
-              {isFetching ? "Actualizando estado cada 2 segundos." : "Estado listo para reintentar."}
+
+            <div className="mt-6">
+              <Button onClick={() => connectMutation.mutate()} disabled={generating}>
+                <RefreshCw className={generating ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                {hasQr ? "Generar nuevo QR" : generating ? "Generando…" : "Generar QR"}
+              </Button>
+            </div>
+
+            <div className="mt-4 rounded-md border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+              {hasQr
+                ? "El QR es válido por unos 5 minutos. Si caduca, pulsa «Generar nuevo QR»."
+                : "El código se genera solo cuando lo pides, para no consumir recursos."}
             </div>
           </div>
         </Card>

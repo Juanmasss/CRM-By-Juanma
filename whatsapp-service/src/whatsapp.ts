@@ -25,21 +25,71 @@ let connected = false;
 let phoneNumber: string | null = null;
 let qrPng: string | null = null;
 
+// Modo QR: true mientras hay un ciclo de vinculación en curso (ventana de 5 min abierta).
+// Distingue "esperando escaneo" de "inactivo" (el usuario debe pulsar «Generar QR»).
+let qrActive = false;
+// Si las credenciales están registradas: hay una sesión válida -> reconexión silenciosa (sin QR).
+let registered = false;
+
 // Generación: cada socket captura la suya; los handlers de un socket reemplazado se ignoran.
-// Evita reconexiones duplicadas cuando se recrea el socket (close/logout).
+// Evita reconexiones/QR duplicados cuando se recrea el socket.
 let generation = 0;
 
-// ── Reconexión con backoff exponencial ──
-// En cada cierre no-logout reintentamos con una espera creciente (1s, 2s, 4s… hasta 30s)
-// para no martillar a WhatsApp ni quemar CPU si el corte es persistente. Se reinicia a 0
-// cuando la conexión vuelve a abrir. reconnectTimer actúa de guarda anti-doble-reintento.
+// ── Ventana de QR ──
+// Un único QR bajo demanda: cuando el usuario pide vincular, abrimos una ventana de 5 minutos
+// durante la cual Baileys mantiene un QR escaneable (lo refresca solo). Si nadie escanea en ese
+// tiempo, DETENEMOS la generación (no más QR) hasta que el usuario vuelva a pulsar «Generar QR».
+// Así no se generan códigos en bucle infinito (que consumían CPU/red sin parar).
+const QR_WINDOW_MS = 5 * 60 * 1000;
+let qrWindowTimer: NodeJS.Timeout | undefined;
+
+// ── Reconexión con backoff (sólo para sesión YA vinculada que se cae) ──
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 let reconnectAttempts = 0;
 let reconnectTimer: NodeJS.Timeout | undefined;
 
+function clearReconnect(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+}
+
+function clearQrWindow(): void {
+  if (qrWindowTimer) {
+    clearTimeout(qrWindowTimer);
+    qrWindowTimer = undefined;
+  }
+}
+
+function startQrWindow(): void {
+  if (qrWindowTimer) return; // ya hay una ventana abierta
+  qrWindowTimer = setTimeout(() => stopQr("expiró la ventana de 5 min"), QR_WINDOW_MS);
+}
+
+// Detiene por completo el modo QR: cierra el socket y deja el servicio inactivo a la espera
+// de que el usuario pulse «Generar QR». No reconecta.
+function stopQr(reason: string): void {
+  clearQrWindow();
+  clearReconnect();
+  generation++; // invalida los handlers del socket actual
+  try {
+    sock?.end(undefined);
+  } catch {
+    /* noop */
+  }
+  sock = undefined;
+  connected = false;
+  phoneNumber = null;
+  qrPng = null;
+  qrActive = false;
+  console.log(`[wa] QR detenido (${reason}). Pulsa «Generar QR» en el dashboard para reintentar.`);
+}
+
+// Programa una reconexión con backoff exponencial (sólo sesión vinculada).
 function scheduleReconnect(): void {
-  if (reconnectTimer) return; // ya hay una reconexión en cola
+  if (reconnectTimer) return;
   const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempts, RECONNECT_MAX_MS);
   reconnectAttempts++;
   console.log(`[wa] Reintento de conexión en ${Math.round(delay / 1000)}s (intento ${reconnectAttempts}).`);
@@ -75,8 +125,7 @@ type WaMessageType = "text" | "image" | "audio" | "video" | "file";
 // Clasifica el contenido de un mensaje entrante en { messageType, text }.
 //   - text = el texto real, o el caption de una media (puede ser null para media sin caption).
 //   - Devuelve null para lo que aún no soportamos (reacciones, protocolo, ubicación, contactos…).
-// La DESCARGA de la media en sí queda como TODO: por ahora sólo guardamos tipo + caption/placeholder
-// para no romper el chat (el placeholder "[imagen]" lo pone el backend según messageType).
+// La DESCARGA de la media en sí queda como TODO: por ahora sólo guardamos tipo + caption/placeholder.
 function classifyMessage(message: WAMessageContent | null | undefined): {
   messageType: WaMessageType;
   text: string | null;
@@ -135,14 +184,17 @@ async function clearAuth(): Promise<void> {
 
 async function connect(): Promise<void> {
   const myGen = ++generation;
+  clearReconnect();
 
-  // Si entramos por una llamada directa (start/disconnect) con un reintento aún en cola, lo cancelamos.
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = undefined;
+  // Cierra cualquier socket previo antes de crear uno nuevo (evita sockets colgando).
+  try {
+    sock?.end(undefined);
+  } catch {
+    /* noop */
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
+  registered = Boolean(state.creds?.registered);
 
   // Versión del protocolo WA Web según Baileys (no fijar a mano).
   let version: [number, number, number] | undefined;
@@ -154,7 +206,10 @@ async function connect(): Promise<void> {
 
   sock = makeWASocket({ version, auth: state, logger });
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    registered = Boolean(sock?.authState?.creds?.registered);
+  });
 
   sock.ev.on("connection.update", async (update) => {
     if (myGen !== generation) return; // socket reemplazado: ignorar
@@ -166,15 +221,20 @@ async function connect(): Promise<void> {
       qrPng = await QRCode.toDataURL(qr);
       connected = false;
       phoneNumber = null;
+      qrActive = true;
+      startQrWindow(); // por si la sesión cae a QR sin pasar por requestQr (idempotente)
       qrcodeTerminal.generate(qr, { small: true });
-      console.log("[wa] Nuevo QR. Escanéalo desde WhatsApp o consúltalo en GET /qr.");
+      console.log("[wa] QR listo (la ventana de vinculación dura 5 min).");
     }
 
     if (connection === "open") {
       connected = true;
       qrPng = null;
+      qrActive = false;
+      registered = true;
       phoneNumber = numberFromJid(sock?.user?.id);
-      reconnectAttempts = 0; // conexión sana: reinicia el backoff
+      reconnectAttempts = 0;
+      clearQrWindow();
       console.log(`[wa] Conectado como ${phoneNumber ?? "(número desconocido)"}.`);
     }
 
@@ -186,15 +246,25 @@ async function connect(): Promise<void> {
       const loggedOut = statusCode === DisconnectReason.loggedOut;
 
       if (loggedOut) {
-        // Sesión cerrada desde el teléfono: credenciales inservibles -> limpiar auth y QR nuevo.
-        console.log("[wa] Sesión cerrada (loggedOut). Limpio auth y espero un nuevo QR.");
+        // Sesión cerrada desde el teléfono: credenciales inservibles -> limpiar y quedar inactivo.
+        console.log("[wa] Sesión cerrada (loggedOut). Limpio auth.");
         await clearAuth();
-        reconnectAttempts = 0; // arranque limpio para el nuevo QR
-      } else {
+        registered = false;
+        stopQr("sesión cerrada");
+      } else if (registered) {
+        // Sesión vinculada que se cayó: reconectar en silencio con backoff.
         console.log(`[wa] Conexión cerrada (code ${statusCode ?? "?"}). Reconectando con backoff…`);
+        scheduleReconnect();
+      } else if (qrActive) {
+        // Modo QR dentro de la ventana: refresca el QR reconectando (espera corta).
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = undefined;
+            void connect();
+          }, 2_000);
+        }
       }
-      // En ambos casos reconectamos (con backoff): si no hay credenciales, emitirá un QR nuevo.
-      scheduleReconnect();
+      // Si no está registrado y la ventana ya cerró: no hacemos nada (servicio inactivo).
     }
   });
 
@@ -226,26 +296,51 @@ async function connect(): Promise<void> {
 }
 
 export const wa = {
-  start(): Promise<void> {
-    return connect();
+  // Al arrancar: si hay sesión previa, reconecta en silencio. Si NO, queda inactivo esperando
+  // que el usuario pulse «Generar QR» (no genera QR automáticamente -> sin bucle de códigos).
+  async start(): Promise<void> {
+    const { state } = await useMultiFileAuthState(config.authDir);
+    if (state.creds?.registered) {
+      console.log("[wa] Sesión previa encontrada. Reconectando…");
+      await connect();
+    } else {
+      console.log('[wa] Sin sesión. Esperando que el usuario genere un QR desde el dashboard.');
+    }
   },
 
-  getStatus(): { connected: boolean; phoneNumber: string | null } {
-    return { connected, phoneNumber };
+  // POST /connect: el usuario pide vincular. Abre la ventana de 5 min y arranca el QR.
+  async requestQr(): Promise<void> {
+    if (connected) return; // ya conectado: nada que hacer
+    reconnectAttempts = 0;
+    clearQrWindow();
+    qrActive = true;
+    startQrWindow(); // la ventana cuenta desde el clic del usuario
+    await connect();
   },
 
-  getQr(): { connected: boolean; qrPng: string | null } {
+  getStatus(): {
+    connected: boolean;
+    phoneNumber: string | null;
+    awaitingQr: boolean;
+  } {
+    return { connected, phoneNumber, awaitingQr: qrActive };
+  },
+
+  getQr(): { connected: boolean; qrPng: string | null; awaitingQr: boolean } {
     // Si ya está conectado no hay QR que mostrar.
-    return { connected, qrPng: connected ? null : qrPng };
+    return { connected, qrPng: connected ? null : qrPng, awaitingQr: qrActive };
   },
 
-  // POST /disconnect: cierra sesión, borra ./auth y vuelve a estado de QR.
+  // POST /disconnect: cierra sesión, borra ./auth y queda inactivo (no auto-genera QR).
   async disconnect(): Promise<void> {
     try {
       await sock?.logout();
     } catch (err) {
       console.warn("[wa] logout() falló (posiblemente ya desconectado).", err);
     }
+    clearReconnect();
+    clearQrWindow();
+    generation++; // invalida handlers del socket actual
     try {
       sock?.end(undefined);
     } catch {
@@ -255,10 +350,11 @@ export const wa = {
     connected = false;
     phoneNumber = null;
     qrPng = null;
-    reconnectAttempts = 0; // desconexión manual: arranque limpio para el nuevo QR
+    qrActive = false;
+    registered = false;
+    reconnectAttempts = 0;
     await clearAuth();
-    // Recrea el socket: al no haber credenciales, generará un nuevo QR.
-    void connect();
+    console.log('[wa] Desconectado y auth limpiada. Pulsa «Generar QR» para vincular de nuevo.');
   },
 
   // POST /send: envía un mensaje de texto, normalizando el destino a jid.

@@ -13,10 +13,20 @@ escaneando un QR como WhatsApp Web. La sesión se persiste en `./auth/` (no vers
 
 | Método | Ruta          | Respuesta                                                        |
 | ------ | ------------- | --------------------------------------------------------------- |
-| GET    | `/status`     | `{ connected, phoneNumber }`                                    |
-| GET    | `/qr`         | `{ connected, qrPng }` — `qrPng` = PNG Data URL o `null`         |
+| GET    | `/status`     | `{ connected, phoneNumber, awaitingQr }`                        |
+| GET    | `/qr`         | `{ connected, qrPng, awaitingQr }` — `qrPng` = PNG Data URL o `null` |
+| POST   | `/connect`    | abre la ventana de QR (5 min) y genera el código → `{ ok }`      |
 | POST   | `/send`       | body `{ to, text }` → `{ ok, externalMessageId }`               |
-| POST   | `/disconnect` | borra `./auth` y cierra sesión → `{ ok }`                       |
+| POST   | `/disconnect` | borra `./auth` y cierra sesión (queda inactivo) → `{ ok }`       |
+
+### QR bajo demanda (no en bucle)
+
+El servicio **no genera QR automáticamente**: al arrancar, si hay sesión previa reconecta en
+silencio; si no, queda inactivo. El QR se genera sólo cuando el usuario pulsa «Generar QR»
+(`POST /connect`), que abre una **ventana de 5 minutos** durante la cual hay un código
+escaneable (se refresca solo). Si nadie escanea en ese tiempo, la generación se **detiene** hasta
+que el usuario la vuelva a pedir. Esto evita el bucle infinito de códigos que consumía CPU/red.
+La reconexión con backoff sólo aplica a una sesión **ya vinculada** que se cae.
 
 Al recibir un mensaje entrante hace `POST` a
 `BACKEND_INTERNAL_URL/api/internal/whatsapp/incoming` (header `x-internal-secret`) con:
