@@ -32,9 +32,18 @@ export function createServer() {
   });
 
   // POST /send -> { to, text } -> { ok, externalMessageId }
-  // TODO(B7): implementar el envío real con sock.sendMessage. Stub por ahora.
-  app.post("/send", (_req, res) => {
-    res.status(501).json({ ok: false, error: "not_implemented", todo: "B7: POST /send" });
+  app.post("/send", async (req, res) => {
+    const { to, text } = (req.body ?? {}) as { to?: unknown; text?: unknown };
+    if (typeof to !== "string" || !to.trim() || typeof text !== "string" || !text) {
+      return res.status(400).json({ ok: false, error: "bad_request", detail: "Se requieren { to, text }" });
+    }
+    try {
+      const result = await wa.send(to, text);
+      res.json(result);
+    } catch (err) {
+      console.warn("[wa] Error al enviar mensaje.", err);
+      res.status(503).json({ ok: false, error: "send_failed" });
+    }
   });
 
   return app;
