@@ -240,3 +240,40 @@ export async function deleteLead(req: Request, res: Response) {
   await prisma.lead.delete({ where: { id: req.params.id } });
   sendData(res, { id: req.params.id });
 }
+
+const customFieldsSchema = z.object({ customFields: customFieldsInput });
+
+// PATCH /api/leads/:id/custom-fields  — upsert de lead_custom_field_values.
+export async function patchLeadCustomFields(req: Request, res: Response) {
+  const leadId = req.params.id;
+  const { customFields } = validate(customFieldsSchema, req.body ?? {});
+
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) throw notFound("Lead no encontrado");
+
+  // Valida que los campos referenciados existan y sean de entidad 'lead'.
+  if (customFields.length > 0) {
+    const ids = [...new Set(customFields.map((c) => c.fieldId))];
+    const defs = await prisma.customFieldDefinition.findMany({
+      where: { id: { in: ids }, entity: "lead" },
+      select: { id: true },
+    });
+    if (defs.length !== ids.length) throw badRequest("Algún campo personalizado no existe");
+  }
+
+  await prisma.$transaction(
+    customFields.map((c) =>
+      prisma.leadCustomFieldValue.upsert({
+        where: { leadId_fieldId: { leadId, fieldId: c.fieldId } },
+        update: { value: c.value },
+        create: { leadId, fieldId: c.fieldId, value: c.value },
+      }),
+    ),
+  );
+
+  const values = await prisma.leadCustomFieldValue.findMany({
+    where: { leadId },
+    include: { field: true },
+  });
+  sendData(res, values);
+}
