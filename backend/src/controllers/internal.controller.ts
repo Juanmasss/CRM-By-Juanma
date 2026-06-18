@@ -1,7 +1,14 @@
-import { ChannelType, MessageDirection, MessageStatus, SenderType } from "@prisma/client";
+import {
+  ChannelType,
+  ConversationMode,
+  MessageDirection,
+  MessageStatus,
+  SenderType,
+} from "@prisma/client";
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { runAiReply } from "../lib/aiReply.js";
 import { badRequest } from "../lib/errors.js";
 import { sendData, validate } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
@@ -114,9 +121,12 @@ export async function whatsappIncoming(req: Request, res: Response) {
     data: { lastMessageAt: messageAt, status: "open" },
   });
 
-  // TODO(B8/B9): según conversation.mode disparar el salesbot ('bot') o el asistente OpenRouter ('ai').
-  //   if (conversation.mode === "bot") => motor de flujo;  if ("ai") => respuesta OpenRouter.
-  //   'human' (por defecto ahora): no se hace nada automático.
+  // Según conversation.mode disparamos el motor automático (fire-and-forget: no bloquea la respuesta
+  // al servicio de WhatsApp ni propaga errores). 'human' (por defecto): no hace nada automático.
+  if (conversation.mode === ConversationMode.ai) {
+    void runAiReply({ conversationId: conversation.id });
+  }
+  // TODO(B9): if (conversation.mode === 'bot') => motor de flujo del salesbot.
 
   sendData(res, { conversationId: conversation.id, messageId: message.id }, 201);
 }
