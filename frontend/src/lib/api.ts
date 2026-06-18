@@ -487,6 +487,17 @@ function unwrapList<T>(response: T[] | { data?: T[]; items?: T[] }): T[] {
   return response.data ?? response.items ?? [];
 }
 
+// El backend responde siempre como { data: ... } (sendData). Desenvuelve ese sobre para objetos.
+function unwrapData<T>(response: T | { data?: T }): T {
+  if (response && typeof response === "object" && "data" in response) {
+    const inner = (response as { data?: T }).data;
+    if (inner !== undefined) {
+      return inner;
+    }
+  }
+  return response as T;
+}
+
 export async function getPipelines() {
   const response = await apiFetch<Pipeline[] | { data?: Pipeline[]; items?: Pipeline[] }>(
     "/api/pipelines",
@@ -656,21 +667,32 @@ export async function getConversations(params: { status?: string; mode?: Convers
 }
 
 export async function updateConversationMode(conversationId: string, mode: ConversationMode) {
-  return apiFetch<Conversation>(`/api/conversations/${conversationId}/mode`, {
-    method: "PATCH",
-    body: JSON.stringify({ mode }),
-  });
+  const response = await apiFetch<Conversation | { data?: Conversation }>(
+    `/api/conversations/${conversationId}/mode`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ mode }),
+    },
+  );
+  return unwrapData(response);
 }
 
 export async function deleteConversation(conversationId: string) {
-  return apiFetch<{ id: string }>(`/api/conversations/${conversationId}`, {
-    method: "DELETE",
-  });
+  const response = await apiFetch<{ id: string } | { data?: { id: string } }>(
+    `/api/conversations/${conversationId}`,
+    {
+      method: "DELETE",
+    },
+  );
+  return unwrapData(response);
 }
 
 export async function getWhatsappConnection() {
   try {
-    return await apiFetch<WhatsappConnectionResponse>("/api/whatsapp/connection");
+    const response = await apiFetch<
+      WhatsappConnectionResponse | { data?: WhatsappConnectionResponse }
+    >("/api/whatsapp/connection");
+    return unwrapData(response);
   } catch (error) {
     if (error instanceof ApiError || error instanceof TypeError) {
       return { connected: false, phoneNumber: null, qrPng: null, awaitingQr: false };
@@ -681,10 +703,14 @@ export async function getWhatsappConnection() {
 
 export async function connectWhatsapp() {
   try {
-    return await apiFetch<{ ok: boolean }>("/api/whatsapp/connect", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const response = await apiFetch<{ ok: boolean } | { data?: { ok: boolean } }>(
+      "/api/whatsapp/connect",
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    );
+    return unwrapData(response);
   } catch (error) {
     if (error instanceof ApiError || error instanceof TypeError) {
       return { ok: false };
@@ -695,10 +721,14 @@ export async function connectWhatsapp() {
 
 export async function disconnectWhatsapp() {
   try {
-    return await apiFetch<{ ok: boolean }>("/api/whatsapp/disconnect", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const response = await apiFetch<{ ok: boolean } | { data?: { ok: boolean } }>(
+      "/api/whatsapp/disconnect",
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    );
+    return unwrapData(response);
   } catch (error) {
     if (error instanceof ApiError || error instanceof TypeError) {
       return { ok: false };
@@ -708,10 +738,14 @@ export async function disconnectWhatsapp() {
 }
 
 export async function sendConversationMessage(conversationId: string, input: { body: string }) {
-  return apiFetch<Message>(`/api/conversations/${conversationId}/messages`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  const response = await apiFetch<Message | { data?: Message }>(
+    `/api/conversations/${conversationId}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+  return unwrapData(response);
 }
 
 export async function getTasks(
