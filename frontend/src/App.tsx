@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppLayout } from "@/layouts/AppLayout";
+import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { CompaniesPage } from "@/pages/CompaniesPage";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { HomePage } from "@/pages/HomePage";
@@ -19,7 +20,7 @@ const router = createBrowserRouter([
       { path: "leads", element: <LeadsPage /> },
       { path: "contacts", element: <ContactsPage /> },
       { path: "companies", element: <CompaniesPage /> },
-      { path: "activities", element: <PlaceholderPage title="Actividades" /> },
+      { path: "activities", element: <ActivitiesPage /> },
       { path: "reports", element: <PlaceholderPage title="Reportes" /> },
       { path: "bots", element: <PlaceholderPage title="Bots" /> },
       { path: "chat", element: <PlaceholderPage title="Chat" /> },

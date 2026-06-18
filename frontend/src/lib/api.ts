@@ -52,6 +52,8 @@ export function useApi() {
 export type ChannelType = "whatsapp" | "instagram" | "facebook" | "tiktok";
 export type CustomFieldType = "text" | "number" | "select" | "date";
 export type SenderType = "contact" | "agent" | "bot";
+export type TaskType = "task" | "call" | "email" | "meeting" | "whatsapp";
+export type TaskStatus = "pending" | "overdue" | "completed";
 
 export interface Pipeline {
   id: string;
@@ -180,12 +182,32 @@ export interface Message {
 
 export interface Task {
   id: string;
+  leadId?: string | null;
+  lead_id?: string | null;
+  type?: TaskType;
   title: string;
   description?: string | null;
   dueAt?: string | null;
   due_at?: string | null;
   completedAt?: string | null;
   completed_at?: string | null;
+  assignedToUserId?: string | null;
+  assigned_to_user_id?: string | null;
+  assignedTo?: UserSummary | null;
+  assigned_to?: UserSummary | null;
+  lead?: Pick<Lead, "id" | "name" | "title" | "contact"> | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}
+
+export interface TaskInput {
+  title: string;
+  type?: TaskType;
+  description?: string | null;
+  leadId?: string | null;
+  assignedToUserId?: string | null;
+  dueAt?: string | null;
+  completed?: boolean;
 }
 
 export interface DashboardMetric {
@@ -457,10 +479,59 @@ export async function sendConversationMessage(conversationId: string, input: { b
   });
 }
 
-export async function createTask(input: { leadId: string; title: string }) {
+export async function getTasks(
+  params: {
+    status?: TaskStatus | "all";
+    type?: TaskType | "all";
+    assignedTo?: string;
+    leadId?: string;
+    from?: string;
+    to?: string;
+  } = {},
+) {
+  const searchParams = new URLSearchParams();
+  if (params.status && params.status !== "all") {
+    searchParams.set("status", params.status);
+  }
+  if (params.type && params.type !== "all") {
+    searchParams.set("type", params.type);
+  }
+  if (params.assignedTo) {
+    searchParams.set("assignedTo", params.assignedTo);
+  }
+  if (params.leadId) {
+    searchParams.set("leadId", params.leadId);
+  }
+  if (params.from) {
+    searchParams.set("from", params.from);
+  }
+  if (params.to) {
+    searchParams.set("to", params.to);
+  }
+  const query = searchParams.toString();
+  const response = await apiFetch<Task[] | { data?: Task[]; items?: Task[] }>(
+    `/api/tasks${query ? `?${query}` : ""}`,
+  );
+  return unwrapList(response);
+}
+
+export async function createTask(input: TaskInput) {
   return apiFetch<Task>("/api/tasks", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export async function updateTask(id: string, input: Partial<TaskInput>) {
+  return apiFetch<Task>(`/api/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteTask(id: string) {
+  return apiFetch<{ id: string }>(`/api/tasks/${id}`, {
+    method: "DELETE",
   });
 }
 
