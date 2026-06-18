@@ -4,6 +4,7 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
+  type WAMessageContent,
   type WASocket,
 } from "@whiskeysockets/baileys";
 import { pino } from "pino";
@@ -28,6 +29,26 @@ let qrPng: string | null = null;
 // Evita reconexiones duplicadas cuando se recrea el socket (close/logout).
 let generation = 0;
 
+// ── Reconexión con backoff exponencial ──
+// En cada cierre no-logout reintentamos con una espera creciente (1s, 2s, 4s… hasta 30s)
+// para no martillar a WhatsApp ni quemar CPU si el corte es persistente. Se reinicia a 0
+// cuando la conexión vuelve a abrir. reconnectTimer actúa de guarda anti-doble-reintento.
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+let reconnectAttempts = 0;
+let reconnectTimer: NodeJS.Timeout | undefined;
+
+function scheduleReconnect(): void {
+  if (reconnectTimer) return; // ya hay una reconexión en cola
+  const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempts, RECONNECT_MAX_MS);
+  reconnectAttempts++;
+  console.log(`[wa] Reintento de conexión en ${Math.round(delay / 1000)}s (intento ${reconnectAttempts}).`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    void connect();
+  }, delay);
+}
+
 // "12345:6@s.whatsapp.net" -> "12345"
 function numberFromJid(jid: string | undefined): string | null {
   if (!jid) return null;
@@ -48,11 +69,51 @@ function toUnix(ts: number | { toNumber?: () => number } | null | undefined): nu
   return typeof ts.toNumber === "function" ? ts.toNumber() : Math.floor(Date.now() / 1000);
 }
 
+// Tipos de mensaje que persistimos (alineados con el enum MessageType de Prisma).
+type WaMessageType = "text" | "image" | "audio" | "video" | "file";
+
+// Clasifica el contenido de un mensaje entrante en { messageType, text }.
+//   - text = el texto real, o el caption de una media (puede ser null para media sin caption).
+//   - Devuelve null para lo que aún no soportamos (reacciones, protocolo, ubicación, contactos…).
+// La DESCARGA de la media en sí queda como TODO: por ahora sólo guardamos tipo + caption/placeholder
+// para no romper el chat (el placeholder "[imagen]" lo pone el backend según messageType).
+function classifyMessage(message: WAMessageContent | null | undefined): {
+  messageType: WaMessageType;
+  text: string | null;
+} | null {
+  if (!message) return null;
+
+  // Desenvuelve envoltorios habituales (efímeros, ver-una-vez, documento con caption).
+  const inner =
+    message.ephemeralMessage?.message ??
+    message.viewOnceMessage?.message ??
+    message.viewOnceMessageV2?.message ??
+    message.viewOnceMessageV2Extension?.message ??
+    message.documentWithCaptionMessage?.message ??
+    message;
+
+  if (inner.conversation) return { messageType: "text", text: inner.conversation };
+  if (inner.extendedTextMessage?.text)
+    return { messageType: "text", text: inner.extendedTextMessage.text };
+  if (inner.imageMessage) return { messageType: "image", text: inner.imageMessage.caption ?? null };
+  if (inner.stickerMessage) return { messageType: "image", text: null };
+  if (inner.videoMessage) return { messageType: "video", text: inner.videoMessage.caption ?? null };
+  if (inner.audioMessage) return { messageType: "audio", text: null };
+  if (inner.documentMessage)
+    return {
+      messageType: "file",
+      text: inner.documentMessage.caption ?? inner.documentMessage.fileName ?? null,
+    };
+
+  return null; // TODO(media): location, contact, reactions, polls… aún no soportados.
+}
+
 // Reenvía un mensaje entrante al backend (endpoint interno).
 async function forwardIncoming(payload: {
   from: string;
   pushName: string | null;
-  text: string;
+  text: string | null;
+  messageType: WaMessageType;
   externalMessageId: string | null;
   timestamp: number;
 }): Promise<void> {
@@ -74,6 +135,12 @@ async function clearAuth(): Promise<void> {
 
 async function connect(): Promise<void> {
   const myGen = ++generation;
+
+  // Si entramos por una llamada directa (start/disconnect) con un reintento aún en cola, lo cancelamos.
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
 
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
 
@@ -107,23 +174,27 @@ async function connect(): Promise<void> {
       connected = true;
       qrPng = null;
       phoneNumber = numberFromJid(sock?.user?.id);
+      reconnectAttempts = 0; // conexión sana: reinicia el backoff
       console.log(`[wa] Conectado como ${phoneNumber ?? "(número desconocido)"}.`);
     }
 
     if (connection === "close") {
       connected = false;
+      phoneNumber = null;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output
         ?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
 
       if (loggedOut) {
+        // Sesión cerrada desde el teléfono: credenciales inservibles -> limpiar auth y QR nuevo.
         console.log("[wa] Sesión cerrada (loggedOut). Limpio auth y espero un nuevo QR.");
         await clearAuth();
+        reconnectAttempts = 0; // arranque limpio para el nuevo QR
       } else {
-        console.log(`[wa] Conexión cerrada (code ${statusCode ?? "?"}). Reconectando…`);
+        console.log(`[wa] Conexión cerrada (code ${statusCode ?? "?"}). Reconectando con backoff…`);
       }
-      // En ambos casos reconectamos: si no hay credenciales, emitirá un QR nuevo.
-      void connect();
+      // En ambos casos reconectamos (con backoff): si no hay credenciales, emitirá un QR nuevo.
+      scheduleReconnect();
     }
   });
 
@@ -138,14 +209,15 @@ async function connect(): Promise<void> {
       if (!jid || m.key.fromMe) continue;
       if (!jid.endsWith("@s.whatsapp.net")) continue;
 
-      // Por ahora sólo reenviamos texto (B7); media queda para más adelante.
-      const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? null;
-      if (!text) continue;
+      // Texto y media (imagen/audio/video/archivo). El backend guarda tipo + caption/placeholder.
+      const classified = classifyMessage(m.message);
+      if (!classified) continue; // tipo aún no soportado: lo ignoramos sin romper.
 
       await forwardIncoming({
         from: jid,
         pushName: m.pushName ?? null,
-        text,
+        text: classified.text,
+        messageType: classified.messageType,
         externalMessageId: m.key.id ?? null,
         timestamp: toUnix(m.messageTimestamp),
       });
@@ -183,6 +255,7 @@ export const wa = {
     connected = false;
     phoneNumber = null;
     qrPng = null;
+    reconnectAttempts = 0; // desconexión manual: arranque limpio para el nuevo QR
     await clearAuth();
     // Recrea el socket: al no haber credenciales, generará un nuevo QR.
     void connect();

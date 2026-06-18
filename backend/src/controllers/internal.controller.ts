@@ -3,6 +3,7 @@ import {
   ConversationMode,
   MessageDirection,
   MessageStatus,
+  MessageType,
   SenderType,
 } from "@prisma/client";
 import type { Request, Response } from "express";
@@ -17,10 +18,20 @@ import { prisma } from "../lib/prisma.js";
 const incomingSchema = z.object({
   from: z.string().min(1), // jid de WhatsApp, p. ej. "573001112233@s.whatsapp.net"
   pushName: z.string().nullable().optional(),
-  text: z.string().nullable().optional(),
+  text: z.string().nullable().optional(), // texto real o caption de la media (puede faltar)
+  messageType: z.nativeEnum(MessageType).optional(), // por defecto 'text'
   externalMessageId: z.string().nullable().optional(),
   timestamp: z.number().optional(), // unix en segundos
 });
+
+// Placeholder por tipo cuando la media no trae caption (la descarga de media es TODO).
+const MEDIA_PLACEHOLDER: Record<MessageType, string> = {
+  [MessageType.text]: "",
+  [MessageType.image]: "[imagen]",
+  [MessageType.audio]: "[audio]",
+  [MessageType.video]: "[video]",
+  [MessageType.file]: "[archivo]",
+};
 
 // "573001112233@s.whatsapp.net" / "573001112233:6@..." -> "573001112233"
 function numberFromJid(jid: string): string {
@@ -33,6 +44,27 @@ export async function whatsappIncoming(req: Request, res: Response) {
   const jid = body.from;
   const number = numberFromJid(jid);
   const messageAt = body.timestamp ? new Date(body.timestamp * 1000) : new Date();
+
+  // ── Idempotencia ──
+  // Baileys puede reentregar el mismo mensaje (reconexiones, sincronización). Si ya guardamos
+  // este externalMessageId entrante, devolvemos lo existente SIN duplicar ni redisparar bot/IA.
+  if (body.externalMessageId) {
+    const existing = await prisma.message.findFirst({
+      where: {
+        externalMessageId: body.externalMessageId,
+        direction: MessageDirection.inbound,
+      },
+      select: { id: true, conversationId: true },
+    });
+    if (existing) {
+      sendData(
+        res,
+        { conversationId: existing.conversationId, messageId: existing.id, deduped: true },
+        200,
+      );
+      return;
+    }
+  }
 
   // ── Canal de WhatsApp (se crea si aún no existe) ──
   let channel = await prisma.channel.findFirst({ where: { type: ChannelType.whatsapp } });
@@ -104,13 +136,21 @@ export async function whatsappIncoming(req: Request, res: Response) {
   }
 
   // ── Mensaje entrante (sender_type='contact', direction='inbound') ──
+  // Para media sin caption guardamos un placeholder ("[imagen]"…) según el tipo, de modo que el
+  // chat no se rompa aunque todavía no descarguemos el archivo (media_url = TODO).
+  const messageType = body.messageType ?? MessageType.text;
+  const caption = body.text?.trim() || null;
+  const persistedBody =
+    messageType === MessageType.text ? (body.text ?? null) : (caption ?? MEDIA_PLACEHOLDER[messageType]);
+
   const message = await prisma.message.create({
     data: {
       conversationId: conversation.id,
       direction: MessageDirection.inbound,
       senderType: SenderType.contact,
       senderName: body.pushName?.trim() || contact.name,
-      body: body.text ?? null,
+      body: persistedBody,
+      messageType,
       externalMessageId: body.externalMessageId ?? null,
       status: MessageStatus.delivered,
       createdAt: messageAt,

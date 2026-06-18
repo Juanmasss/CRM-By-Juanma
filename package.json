@@ -1,0 +1,16 @@
+{
+  "name": "crm-by-juanma",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CRM by Juanma — orquestador de desarrollo: levanta whatsapp-service + backend + frontend juntos.",
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names \"bot,backend,frontend\" --prefix-colors \"magenta,cyan,green\" \"npm:dev:bot\" \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:bot": "npm --prefix whatsapp-service run start:bot",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm install && npm --prefix whatsapp-service install && npm --prefix backend install && npm --prefix frontend install"
+  },
+  "devDependencies": {
+    "concurrently": "9.1.2"
+  }
+}
