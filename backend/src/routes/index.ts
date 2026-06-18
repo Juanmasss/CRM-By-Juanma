@@ -2,9 +2,11 @@ import { Router } from "express";
 
 import companies from "./companies.routes.js";
 import contacts from "./contacts.routes.js";
+import dashboard from "./dashboard.routes.js";
 import leads from "./leads.routes.js";
 import notes from "./notes.routes.js";
 import pipelines from "./pipelines.routes.js";
+import reports from "./reports.routes.js";
 import stages from "./stages.routes.js";
 import tags from "./tags.routes.js";
 import tasks from "./tasks.routes.js";
@@ -19,5 +21,7 @@ api.use("/companies", companies);
 api.use("/tags", tags);
 api.use("/notes", notes);
 api.use("/tasks", tasks);
+api.use("/dashboard", dashboard);
+api.use("/reports", reports);
 
 export default api;
