@@ -35,6 +35,14 @@ export function getHealth() {
   return apiFetch<HealthResponse>("/health");
 }
 
+export async function getDashboard(): Promise<DashboardResponse> {
+  const response = await apiFetch<DashboardResponse | { data?: DashboardResponse }>("/api/dashboard");
+  if ("data" in response && response.data) {
+    return response.data;
+  }
+  return response as DashboardResponse;
+}
+
 export function useApi() {
   return {
     fetch: apiFetch,
@@ -150,6 +158,92 @@ export interface Task {
   due_at?: string | null;
   completedAt?: string | null;
   completed_at?: string | null;
+}
+
+export interface DashboardMetric {
+  value?: number | string | null;
+  total?: number | string | null;
+  count?: number | string | null;
+  change?: number | string | null;
+  variation?: number | string | null;
+  variationPercent?: number | string | null;
+  variation_percent?: number | string | null;
+}
+
+export interface DashboardMonthPoint {
+  month?: string;
+  label?: string;
+  revenue?: number | string | null;
+  amount?: number | string | null;
+  value?: number | string | null;
+}
+
+export interface DashboardStagePoint {
+  stageId?: string;
+  stage_id?: string;
+  name?: string;
+  stage?: string;
+  color?: string | null;
+  count?: number | string | null;
+  leads?: number | string | null;
+  value?: number | string | null;
+}
+
+export interface DashboardStatusPoint {
+  status?: "won" | "open" | "lost" | string;
+  name?: string;
+  count?: number | string | null;
+  value?: number | string | null;
+}
+
+export interface DashboardResponse {
+  revenue_total?: number | string | DashboardMetric | null;
+  revenueTotal?: number | string | DashboardMetric | null;
+  deals_in_pipeline?:
+    | { count?: number | string | null; value?: number | string | null; change?: number | string | null }
+    | DashboardMetric
+    | null;
+  dealsInPipeline?:
+    | { count?: number | string | null; value?: number | string | null; change?: number | string | null }
+    | DashboardMetric
+    | null;
+  close_rate?: number | string | DashboardMetric | null;
+  closeRate?: number | string | DashboardMetric | null;
+  activities_today?:
+    | {
+        total?: number | string | null;
+        tasks?: number | string | null;
+        messages?: number | string | null;
+        change?: number | string | null;
+      }
+    | DashboardMetric
+    | null;
+  activitiesToday?:
+    | {
+        total?: number | string | null;
+        tasks?: number | string | null;
+        messages?: number | string | null;
+        change?: number | string | null;
+      }
+    | DashboardMetric
+    | null;
+  revenue_by_month?: DashboardMonthPoint[];
+  revenueByMonth?: DashboardMonthPoint[];
+  leads_by_stage?:
+    | { pipelineId?: string | null; pipelineName?: string | null; stages?: DashboardStagePoint[] }
+    | DashboardStagePoint[];
+  leadsByStage?:
+    | { pipelineId?: string | null; pipelineName?: string | null; stages?: DashboardStagePoint[] }
+    | DashboardStagePoint[];
+  lead_status?: DashboardStatusPoint[];
+  leadStatus?: DashboardStatusPoint[];
+  status_breakdown?: DashboardStatusPoint[];
+  statusBreakdown?: DashboardStatusPoint[];
+  won?: number | string | null;
+  open?: number | string | null;
+  lost?: number | string | null;
+  new_leads_today_yesterday?: { today?: number | string | null; yesterday?: number | string | null };
+  newLeadsTodayYesterday?: { today?: number | string | null; yesterday?: number | string | null };
 }
 
 export interface Lead {
