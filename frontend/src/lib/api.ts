@@ -77,6 +77,7 @@ export type CustomFieldType = "text" | "number" | "select" | "date";
 export type SenderType = "contact" | "agent" | "bot";
 export type TaskType = "task" | "call" | "email" | "meeting" | "whatsapp";
 export type TaskStatus = "pending" | "overdue" | "completed";
+export type ConversationMode = "bot" | "ai" | "human";
 
 export interface Pipeline {
   id: string;
@@ -177,11 +178,15 @@ export interface Conversation {
   lead_id?: string | null;
   contactId?: string | null;
   contact_id?: string | null;
+  contact?: ContactSummary | null;
+  lead?: Pick<Lead, "id" | "name" | "title" | "stageId" | "stage_id"> | null;
   channel?: Channel | null;
   status?: string | null;
-  mode?: "bot" | "ai" | "human" | null;
+  mode?: ConversationMode | null;
   lastMessageAt?: string | null;
   last_message_at?: string | null;
+  messages?: Message[];
+  _count?: { messages?: number };
 }
 
 export interface Message {
@@ -549,6 +554,37 @@ export async function getConversationMessages(conversationId: string) {
     `/api/conversations/${conversationId}/messages`,
   );
   return unwrapList(response);
+}
+
+export async function getConversations(params: { status?: string; mode?: ConversationMode; search?: string } = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.status) {
+    searchParams.set("status", params.status);
+  }
+  if (params.mode) {
+    searchParams.set("mode", params.mode);
+  }
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+  const query = searchParams.toString();
+  const response = await apiFetch<Conversation[] | { data?: Conversation[]; items?: Conversation[] }>(
+    `/api/conversations${query ? `?${query}` : ""}`,
+  );
+  return unwrapList(response);
+}
+
+export async function updateConversationMode(conversationId: string, mode: ConversationMode) {
+  return apiFetch<Conversation>(`/api/conversations/${conversationId}/mode`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode }),
+  });
+}
+
+export async function deleteConversation(conversationId: string) {
+  return apiFetch<{ id: string }>(`/api/conversations/${conversationId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function getWhatsappConnection() {
