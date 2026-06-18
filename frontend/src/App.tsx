@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 
 import { AppLayout } from "@/layouts/AppLayout";
+import { CompaniesPage } from "@/pages/CompaniesPage";
+import { ContactsPage } from "@/pages/ContactsPage";
 import { HomePage } from "@/pages/HomePage";
 import { LeadsPage } from "@/pages/LeadsPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
@@ -15,8 +17,8 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: "leads", element: <LeadsPage /> },
-      { path: "contacts", element: <PlaceholderPage title="Contactos" /> },
-      { path: "companies", element: <PlaceholderPage title="Empresas" /> },
+      { path: "contacts", element: <ContactsPage /> },
+      { path: "companies", element: <CompaniesPage /> },
       { path: "activities", element: <PlaceholderPage title="Actividades" /> },
       { path: "reports", element: <PlaceholderPage title="Reportes" /> },
       { path: "bots", element: <PlaceholderPage title="Bots" /> },

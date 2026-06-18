@@ -93,6 +93,34 @@ export interface ContactSummary {
   channel_user_id?: string | null;
   avatarUrl?: string | null;
   avatar_url?: string | null;
+  company?: CompanySummary | null;
+  leads?: Lead[];
+  conversations?: Conversation[];
+  _count?: { leads?: number; contacts?: number };
+  createdAt?: string | null;
+  created_at?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CompanySummary {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  address?: string | null;
+  totalValue?: number | string | null;
+  total_value?: number | string | null;
+  dealsValue?: number | string | null;
+  deals_value?: number | string | null;
+  contacts?: ContactSummary[];
+  leads?: Lead[];
+  _count?: { contacts?: number; leads?: number };
+  createdAt?: string | null;
+  created_at?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
 }
 
 export interface CustomFieldDefinition {
@@ -368,6 +396,48 @@ export async function deleteLeadTag(leadId: string, input: { tagId: string }) {
 
 export async function updateContact(id: string, input: Partial<ContactSummary>) {
   return apiFetch<ContactSummary>(`/api/contacts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getContacts(params: { search?: string; companyId?: string } = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+  if (params.companyId) {
+    searchParams.set("companyId", params.companyId);
+  }
+  const query = searchParams.toString();
+  const response = await apiFetch<ContactSummary[] | { data?: ContactSummary[]; items?: ContactSummary[] }>(
+    `/api/contacts${query ? `?${query}` : ""}`,
+  );
+  return unwrapList(response);
+}
+
+export async function getContact(id: string) {
+  return apiFetch<ContactSummary>(`/api/contacts/${id}`);
+}
+
+export async function getCompanies(params: { search?: string } = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+  const query = searchParams.toString();
+  const response = await apiFetch<CompanySummary[] | { data?: CompanySummary[]; items?: CompanySummary[] }>(
+    `/api/companies${query ? `?${query}` : ""}`,
+  );
+  return unwrapList(response);
+}
+
+export async function getCompany(id: string) {
+  return apiFetch<CompanySummary>(`/api/companies/${id}`);
+}
+
+export async function updateCompany(id: string, input: Partial<CompanySummary>) {
+  return apiFetch<CompanySummary>(`/api/companies/${id}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
