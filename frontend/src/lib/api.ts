@@ -369,6 +369,12 @@ export interface ReportsResponse {
   avgCycleTime?: { days?: number | string | null; sample?: number | string | null };
 }
 
+export interface WhatsappConnectionResponse {
+  connected: boolean;
+  phoneNumber?: string | null;
+  qrPng?: string | null;
+}
+
 export interface Lead {
   id: string;
   name?: string | null;
@@ -543,6 +549,31 @@ export async function getConversationMessages(conversationId: string) {
     `/api/conversations/${conversationId}/messages`,
   );
   return unwrapList(response);
+}
+
+export async function getWhatsappConnection() {
+  try {
+    return await apiFetch<WhatsappConnectionResponse>("/api/whatsapp/connection");
+  } catch (error) {
+    if (error instanceof ApiError || error instanceof TypeError) {
+      return { connected: false, phoneNumber: null, qrPng: null };
+    }
+    throw error;
+  }
+}
+
+export async function disconnectWhatsapp() {
+  try {
+    return await apiFetch<{ ok: boolean }>("/api/whatsapp/disconnect", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  } catch (error) {
+    if (error instanceof ApiError || error instanceof TypeError) {
+      return { ok: false };
+    }
+    throw error;
+  }
 }
 
 export async function sendConversationMessage(conversationId: string, input: { body: string }) {

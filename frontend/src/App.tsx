@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
 
 import { AppLayout } from "@/layouts/AppLayout";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
+import { ChatPage } from "@/pages/ChatPage";
 import { CompaniesPage } from "@/pages/CompaniesPage";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { HomePage } from "@/pages/HomePage";
@@ -24,7 +25,7 @@ const router = createBrowserRouter([
       { path: "activities", element: <ActivitiesPage /> },
       { path: "reports", element: <ReportsPage /> },
       { path: "bots", element: <PlaceholderPage title="Bots" /> },
-      { path: "chat", element: <PlaceholderPage title="Chat" /> },
+      { path: "chat", element: <ChatPage /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
