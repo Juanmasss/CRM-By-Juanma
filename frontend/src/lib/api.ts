@@ -587,7 +587,23 @@ export async function getContacts(params: { search?: string; companyId?: string 
 }
 
 export async function getContact(id: string) {
-  return apiFetch<ContactSummary>(`/api/contacts/${id}`);
+  const response = await apiFetch<ContactSummary | { data?: ContactSummary }>(`/api/contacts/${id}`);
+  if (response && "data" in response && response.data) return response.data;
+  return response as ContactSummary;
+}
+
+export async function createLead(input: {
+  name: string;
+  pipelineId: string;
+  stageId?: string;
+  value?: number;
+}) {
+  const response = await apiFetch<Lead | { data?: Lead }>("/api/leads", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (response && "data" in response && response.data) return response.data;
+  return response as Lead;
 }
 
 export async function getCompanies(params: { search?: string } = {}) {

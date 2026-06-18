@@ -9,13 +9,15 @@ import {
   Search,
   UserRound,
   UsersRound,
+  X,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type FormEvent, useState } from "react";
 import { NavLink, Outlet, useSearchParams } from "react-router-dom";
 
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { getPipelines } from "@/lib/api";
+import { createLead, getPipelines, type Pipeline, type Stage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const routes = [
@@ -32,6 +34,7 @@ const routes = [
 export function AppLayout() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedPipelineId = searchParams.get("pipelineId") ?? "";
+  const [isCreateLeadOpen, setIsCreateLeadOpen] = useState(false);
   const { data: pipelines = [], isLoading } = useQuery({
     queryKey: ["pipelines"],
     queryFn: getPipelines,
@@ -115,7 +118,7 @@ export function AppLayout() {
             />
           </div>
 
-          <Button className="ml-auto">
+          <Button className="ml-auto" onClick={() => setIsCreateLeadOpen(true)}>
             <Plus className="h-4 w-4" />
             Nuevo lead
           </Button>
@@ -126,6 +129,109 @@ export function AppLayout() {
             <Outlet />
           </div>
         </main>
+      </div>
+
+      {isCreateLeadOpen ? (
+        <CreateLeadModal
+          pipelines={pipelines}
+          defaultPipelineId={selectedPipelineId || pipelines[0]?.id || ""}
+          onClose={() => setIsCreateLeadOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CreateLeadModal({
+  pipelines,
+  defaultPipelineId,
+  onClose,
+}: {
+  pipelines: Pipeline[];
+  defaultPipelineId: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [pipelineId, setPipelineId] = useState(defaultPipelineId);
+
+  const selectedPipeline = pipelines.find((p) => p.id === pipelineId) ?? pipelines[0] ?? null;
+  const stages: Stage[] = selectedPipeline?.stages ?? [];
+  const defaultStage = stages.find((s) => s.type === "incoming") ?? stages[0] ?? null;
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      createLead({
+        name: name.trim(),
+        pipelineId,
+        stageId: defaultStage?.id,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["leads"] });
+      onClose();
+    },
+  });
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !pipelineId) return;
+    mutation.mutate();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="text-lg font-semibold">Nuevo lead</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 p-5">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Nombre del lead *</span>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Ej: Juan García — Cotización ropa"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              required
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Pipeline *</span>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              value={pipelineId}
+              onChange={(e) => setPipelineId(e.target.value)}
+              required
+            >
+              {pipelines.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+
+          {defaultStage ? (
+            <p className="text-xs text-muted-foreground">
+              Se creará en la etapa <span className="font-medium text-foreground">{defaultStage.name}</span>.
+            </p>
+          ) : null}
+
+          {mutation.isError ? (
+            <p className="text-sm text-destructive">Error al crear el lead. Intenta de nuevo.</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" disabled={!name.trim() || !pipelineId || mutation.isPending}>
+              {mutation.isPending ? "Creando…" : "Crear lead"}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );
