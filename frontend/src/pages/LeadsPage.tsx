@@ -25,6 +25,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge, Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { LeadDetailPanel } from "@/components/LeadDetailPanel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -144,6 +145,7 @@ export function LeadsPage() {
   const pipelineFromUrl = searchParams.get("pipelineId") ?? "";
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const { data: pipelines = [], isLoading: isLoadingPipelines } = useQuery({
@@ -302,6 +304,7 @@ export function LeadsPage() {
                 leads={groupedLeads.get(stage.id) ?? []}
                 isLoading={isLoadingLeads}
                 activeLeadId={activeLeadId}
+                onOpenLead={setSelectedLeadId}
               />
             ))}
           </div>
@@ -310,6 +313,14 @@ export function LeadsPage() {
 
       {isEditorOpen ? (
         <StageEditorModal pipeline={selectedPipeline} stages={stages} onClose={() => setIsEditorOpen(false)} />
+      ) : null}
+
+      {selectedLeadId ? (
+        <LeadDetailPanel
+          leadId={selectedLeadId}
+          pipelines={pipelines}
+          onClose={() => setSelectedLeadId(null)}
+        />
       ) : null}
     </div>
   );
@@ -320,11 +331,13 @@ function KanbanColumn({
   leads,
   isLoading,
   activeLeadId,
+  onOpenLead,
 }: {
   stage: Stage;
   leads: Lead[];
   isLoading: boolean;
   activeLeadId: string | null;
+  onOpenLead: (leadId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `stage:${stage.id}` });
   const total = leads.reduce((sum, lead) => sum + getLeadValue(lead), 0);
@@ -356,7 +369,12 @@ function KanbanColumn({
           Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-32" />)
         ) : leads.length > 0 ? (
           leads.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} isDragging={activeLeadId === lead.id} />
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              isDragging={activeLeadId === lead.id}
+              onOpen={() => onOpenLead(lead.id)}
+            />
           ))
         ) : (
           <div className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
@@ -368,7 +386,7 @@ function KanbanColumn({
   );
 }
 
-function LeadCard({ lead, isDragging }: { lead: Lead; isDragging: boolean }) {
+function LeadCard({ lead, isDragging, onOpen }: { lead: Lead; isDragging: boolean; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `lead:${lead.id}` });
   const channel = getLeadChannel(lead);
   const tags = getLeadTags(lead);
@@ -386,6 +404,12 @@ function LeadCard({ lead, isDragging }: { lead: Lead; isDragging: boolean }) {
         "cursor-grab touch-none space-y-4 p-4 transition active:cursor-grabbing",
         isDragging && "opacity-70 ring-2 ring-primary/40",
       )}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          onOpen();
+        }
+      }}
       {...listeners}
       {...attributes}
     >
