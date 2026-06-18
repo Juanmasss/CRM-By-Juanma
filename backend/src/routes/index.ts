@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import bots from "./bots.routes.js";
 import companies from "./companies.routes.js";
 import contacts from "./contacts.routes.js";
 import dashboard from "./dashboard.routes.js";
@@ -23,5 +24,6 @@ api.use("/notes", notes);
 api.use("/tasks", tasks);
 api.use("/dashboard", dashboard);
 api.use("/reports", reports);
+api.use("/bots", bots);
 
 export default api;
