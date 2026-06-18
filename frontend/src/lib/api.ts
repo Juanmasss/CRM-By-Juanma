@@ -78,6 +78,24 @@ export type SenderType = "contact" | "agent" | "bot";
 export type TaskType = "task" | "call" | "email" | "meeting" | "whatsapp";
 export type TaskStatus = "pending" | "overdue" | "completed";
 export type ConversationMode = "bot" | "ai" | "human";
+export type BotStatus = "active" | "inactive";
+export type BotNodeType =
+  | "message"
+  | "reaction"
+  | "comment"
+  | "internal_message"
+  | "list_message"
+  | "pause"
+  | "subscribe_meta"
+  | "actions"
+  | "condition"
+  | "validation"
+  | "goto"
+  | "start_salesbot"
+  | "custom_code"
+  | "widget"
+  | "round_robin"
+  | "stop";
 
 export interface Pipeline {
   id: string;
@@ -236,6 +254,52 @@ export interface TaskInput {
   assignedToUserId?: string | null;
   dueAt?: string | null;
   completed?: boolean;
+}
+
+export interface BotFlowNode {
+  id: string;
+  type: BotNodeType;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+}
+
+export interface BotFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  label?: string | null;
+}
+
+export interface BotFlowGraph {
+  nodes: BotFlowNode[];
+  edges: BotFlowEdge[];
+}
+
+export interface BotFlow {
+  id?: string;
+  botId?: string;
+  bot_id?: string;
+  graph?: BotFlowGraph | null;
+}
+
+export interface BotSummary {
+  id: string;
+  name: string;
+  status?: BotStatus | string | null;
+  triggerType?: string | null;
+  trigger_type?: string | null;
+  triggerConfig?: unknown;
+  trigger_config?: unknown;
+  conversionRate?: number | string | null;
+  conversion_rate?: number | string | null;
+  launches?: number | string | null;
+  activeSessions?: number | string | null;
+  active_sessions?: number | string | null;
+  flow?: BotFlow | null;
+  _count?: { sessions?: number };
+  createdAt?: string | null;
+  created_at?: string | null;
 }
 
 export interface DashboardMetric {
@@ -659,6 +723,35 @@ export async function createTask(input: TaskInput) {
   return apiFetch<Task>("/api/tasks", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export async function getBots() {
+  const response = await apiFetch<BotSummary[] | { data?: BotSummary[]; items?: BotSummary[] }>(
+    "/api/bots",
+  );
+  return unwrapList(response);
+}
+
+export async function getBot(id: string) {
+  const response = await apiFetch<BotSummary | { data?: BotSummary }>(`/api/bots/${id}`);
+  if ("data" in response && response.data) {
+    return response.data;
+  }
+  return response as BotSummary;
+}
+
+export async function createBot(input: { name: string; status?: BotStatus }) {
+  return apiFetch<BotSummary>("/api/bots", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function saveBotFlow(botId: string, graph: BotFlowGraph) {
+  return apiFetch<BotFlow>(`/api/bots/${botId}/flow`, {
+    method: "PUT",
+    body: JSON.stringify(graph),
   });
 }
 
