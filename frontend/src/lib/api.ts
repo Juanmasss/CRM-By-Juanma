@@ -43,6 +43,29 @@ export async function getDashboard(): Promise<DashboardResponse> {
   return response as DashboardResponse;
 }
 
+export async function getReports(
+  params: { from?: string; to?: string; pipelineId?: string } = {},
+): Promise<ReportsResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.from) {
+    searchParams.set("from", params.from);
+  }
+  if (params.to) {
+    searchParams.set("to", params.to);
+  }
+  if (params.pipelineId) {
+    searchParams.set("pipelineId", params.pipelineId);
+  }
+  const query = searchParams.toString();
+  const response = await apiFetch<ReportsResponse | { data?: ReportsResponse }>(
+    `/api/reports${query ? `?${query}` : ""}`,
+  );
+  if ("data" in response && response.data) {
+    return response.data;
+  }
+  return response as ReportsResponse;
+}
+
 export function useApi() {
   return {
     fetch: apiFetch,
@@ -294,6 +317,56 @@ export interface DashboardResponse {
   lost?: number | string | null;
   new_leads_today_yesterday?: { today?: number | string | null; yesterday?: number | string | null };
   newLeadsTodayYesterday?: { today?: number | string | null; yesterday?: number | string | null };
+}
+
+export interface ReportsMonthPoint {
+  month?: string;
+  label?: string;
+  revenue?: number | string | null;
+  amount?: number | string | null;
+  value?: number | string | null;
+}
+
+export interface ReportsStagePoint {
+  stageId?: string;
+  stage_id?: string;
+  name: string;
+  type?: string | null;
+  count?: number | string | null;
+  conversion?: number | string | null;
+}
+
+export interface ReportsSalesRankingPoint {
+  userId?: string | null;
+  user_id?: string | null;
+  name: string;
+  wonLeads?: number | string | null;
+  won_leads?: number | string | null;
+  revenue?: number | string | null;
+}
+
+export interface ReportsWinLoss {
+  won?: number | string | null;
+  lost?: number | string | null;
+  winRate?: number | string | null;
+  win_rate?: number | string | null;
+  reasons?: Array<{ reason: string; count?: number | string | null }>;
+}
+
+export interface ReportsResponse {
+  range?: { from?: string; to?: string };
+  pipelineId?: string | null;
+  pipeline_id?: string | null;
+  revenue_by_month?: ReportsMonthPoint[];
+  revenueByMonth?: ReportsMonthPoint[];
+  conversion_by_stage?: ReportsStagePoint[];
+  conversionByStage?: ReportsStagePoint[];
+  sales_ranking?: ReportsSalesRankingPoint[];
+  salesRanking?: ReportsSalesRankingPoint[];
+  win_loss?: ReportsWinLoss;
+  winLoss?: ReportsWinLoss;
+  avg_cycle_time?: { days?: number | string | null; sample?: number | string | null };
+  avgCycleTime?: { days?: number | string | null; sample?: number | string | null };
 }
 
 export interface Lead {

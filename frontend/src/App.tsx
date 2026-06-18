@@ -8,6 +8,7 @@ import { ContactsPage } from "@/pages/ContactsPage";
 import { HomePage } from "@/pages/HomePage";
 import { LeadsPage } from "@/pages/LeadsPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 
 const queryClient = new QueryClient();
 
@@ -21,7 +22,7 @@ const router = createBrowserRouter([
       { path: "contacts", element: <ContactsPage /> },
       { path: "companies", element: <CompaniesPage /> },
       { path: "activities", element: <ActivitiesPage /> },
-      { path: "reports", element: <PlaceholderPage title="Reportes" /> },
+      { path: "reports", element: <ReportsPage /> },
       { path: "bots", element: <PlaceholderPage title="Bots" /> },
       { path: "chat", element: <PlaceholderPage title="Chat" /> },
       { path: "*", element: <Navigate to="/" replace /> },
