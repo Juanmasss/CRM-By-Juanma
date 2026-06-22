@@ -1,8 +1,8 @@
 # CONTEXTO MAESTRO — CRM by Juanma (DOS agentes en paralelo)
 
-Trabajas junto a OTRO agente de IA en el mismo repo, al mismo tiempo. Para no pisarse,
-respeta estrictamente la división de carpetas y el contrato de API. Si algo no está aquí,
-PREGUNTA antes de inventar.
+Trabajas junto a OTRO agente de IA en el mismo repo, pero POR TURNOS (no simultáneo). Para no
+pisarse, respeta estrictamente el contrato de API y trabaja un agente a la vez. Si algo no está
+aquí, PREGUNTA antes de inventar.
 
 ## Producto
 "CRM by Juanma": CRM propio para e-commerce en Colombia, estilo Kommo. Gestiona leads en un
@@ -20,10 +20,15 @@ en ningún lado.
 - Modo IA: OpenRouter (openai SDK con baseURL=OPENROUTER_BASE_URL, modelo OPENROUTER_MODEL).
 - Secretos SIEMPRE en .env. Si necesitas una variable nueva, decláralo en el commit.
 
-## Dueños de carpetas (regla anti-conflicto)
-- OPUS: backend/ y whatsapp-service/. CODEX: frontend/.
-- Nadie edita la carpeta del otro. Si necesitas un cambio allí, déjalo como TODO comentado
-  y descríbelo en el mensaje de commit.
+## Reglas de trabajo (acceso total, turnos)
+- Cualquier agente puede tocar cualquier archivo de cualquier carpeta.
+- Trabajamos POR TURNOS, no simultáneo: un solo agente edita el repo a la vez. Antes de empezar,
+  haz `git pull` para tener lo último. Al terminar, commit + push.
+- El contrato de API y el esquema de datos de este documento siguen siendo la verdad: si cambias
+  un endpoint o una tabla, ACTUALIZA este CONTEXT.md en el mismo commit para no desincronizar.
+- Antes de editar, da en 3-5 líneas el plan de archivos a tocar.
+- Si tocas algo fuera de tu tarea actual, dilo explícitamente en el mensaje de commit.
+- Un commit por tarea, mensaje claro "fix(scope): ..." o "feat(scope): ...".
 
 ## Modelo de datos (Prisma = única fuente de verdad)
 Tablas: users, pipelines, stages, companies, contacts, leads, tags, lead_tags,
