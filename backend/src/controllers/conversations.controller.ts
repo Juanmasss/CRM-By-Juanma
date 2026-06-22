@@ -9,8 +9,9 @@ import {
 import type { Request, Response } from "express";
 import { z } from "zod";
 
-import { badRequest, notFound } from "../lib/errors.js";
+import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { sendData, validate } from "../lib/http.js";
+import { isReplyWindowOpen } from "../lib/messagingWindow.js";
 import { prisma } from "../lib/prisma.js";
 import { sendViaService } from "../lib/waService.js";
 
@@ -74,6 +75,14 @@ export async function postMessage(req: Request, res: Response) {
   if (!conversation) throw notFound("Conversación no encontrada");
   if (!conversation.externalThreadId) {
     throw badRequest("La conversación no tiene un destino de WhatsApp asociado");
+  }
+
+  // Ventana de 24h: solo se puede escribir dentro de las 24h desde el último mensaje del contacto.
+  if (!(await isReplyWindowOpen(conversation.id))) {
+    throw new HttpError(
+      403,
+      "La ventana de 24 horas está cerrada. No puedes escribirle hasta que el contacto vuelva a escribir.",
+    );
   }
 
   // Envía primero por WhatsApp; si falla, no persistimos un mensaje fantasma.

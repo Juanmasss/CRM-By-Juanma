@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 
 import { actionSchema, graphSchema, type BotGraph } from "./botGraph.js";
+import { isReplyWindowOpen } from "./messagingWindow.js";
 import { prisma } from "./prisma.js";
 import { sendViaService } from "./waService.js";
 
@@ -602,6 +603,12 @@ export async function runBotForConversation({
     });
     // Salvaguarda anti-bucle: sólo reaccionamos a mensajes del contacto.
     if (!last || last.senderType !== SenderType.contact) return;
+
+    // Ventana de 24h: fuera de plazo el bot no escribe (no se puede contactar al cliente).
+    if (!(await isReplyWindowOpen(conversationId))) {
+      console.warn(`[bot] Ventana de 24h cerrada en conversación ${conversationId}; omito.`);
+      return;
+    }
 
     // Bot a usar: el de la sesión activa, o el primer bot activo cuyo disparador coincida.
     const active = await prisma.botSession.findFirst({

@@ -42,6 +42,28 @@ function getMessageSenderName(message: Message) {
   return message.senderName ?? message.sender_name ?? "";
 }
 
+// Ventana de servicio de 24h: solo se puede escribir dentro de las 24h desde el último
+// mensaje del contacto. Espejo de la regla que el backend aplica como fuente de verdad.
+const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function getLastInboundTime(messages: Message[]): number | null {
+  let last: number | null = null;
+  for (const message of messages) {
+    if (getMessageSenderType(message) !== "contact") {
+      continue;
+    }
+    const raw = message.createdAt ?? message.created_at;
+    if (!raw) {
+      continue;
+    }
+    const time = new Date(raw).getTime();
+    if (!Number.isNaN(time)) {
+      last = time;
+    }
+  }
+  return last;
+}
+
 function getMessageDate(message: Message) {
   const rawDate = message.createdAt ?? message.created_at;
   if (!rawDate) {
@@ -212,7 +234,7 @@ export function ChatConversationPanel({
   const mode = conversation?.mode ?? "human";
   const isHuman = mode === "human";
 
-  const { data: messages = [], isLoading, isError } = useQuery({
+  const { data: messages = [], isLoading, isError } = useQuery<Message[]>({
     queryKey: ["conversation-messages", conversationId],
     queryFn: () => getConversationMessages(conversationId),
     enabled: Boolean(conversationId),
@@ -246,9 +268,14 @@ export function ChatConversationPanel({
     },
   });
 
+  // Ventana de 24h abierta si hay un mensaje del contacto en las últimas 24h.
+  const lastInboundTime = getLastInboundTime(messages);
+  const windowOpen = lastInboundTime != null && Date.now() - lastInboundTime <= REPLY_WINDOW_MS;
+  const canSend = isHuman && windowOpen;
+
   function handleSend() {
     const body = messageDraft.trim();
-    if (!body || !conversation || !isHuman) {
+    if (!body || !conversation || !canSend) {
       return;
     }
     sendMutation.mutate(body);
@@ -337,9 +364,19 @@ export function ChatConversationPanel({
       </div>
 
       <div className="border-t border-border p-4">
-        {!isHuman ? (
+        {!windowOpen ? (
+          <p className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+            Pasaron más de 24 horas desde el último mensaje del contacto. No puedes escribirle
+            (ni tú, ni la IA, ni el bot) hasta que vuelva a escribir.
+          </p>
+        ) : !isHuman ? (
           <p className="mb-2 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
             {mode === "bot" ? "El salesbot responde esta conversación." : "La IA responde esta conversación."}
+          </p>
+        ) : null}
+        {sendMutation.isError ? (
+          <p className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {sendMutation.error instanceof Error ? sendMutation.error.message : "No se pudo enviar el mensaje."}
           </p>
         ) : null}
         <div className="flex gap-2">
@@ -347,14 +384,20 @@ export function ChatConversationPanel({
             className="min-h-10 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
             value={messageDraft}
             onChange={(event) => setMessageDraft(event.target.value)}
-            placeholder={isHuman ? "Escribe una respuesta" : "Cambia a Humano para responder"}
-            disabled={!isHuman}
+            placeholder={
+              !windowOpen
+                ? "Ventana de 24h cerrada"
+                : isHuman
+                  ? "Escribe una respuesta"
+                  : "Cambia a Humano para responder"
+            }
+            disabled={!canSend}
             rows={2}
           />
           <Button
             className="self-end"
             onClick={handleSend}
-            disabled={!isHuman || !messageDraft.trim() || sendMutation.isPending}
+            disabled={!canSend || !messageDraft.trim() || sendMutation.isPending}
           >
             <Send className="h-4 w-4" />
             Enviar

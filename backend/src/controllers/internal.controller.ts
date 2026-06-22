@@ -11,7 +11,6 @@ import { z } from "zod";
 
 import { runAiReply } from "../lib/aiReply.js";
 import { runBotForConversation } from "../lib/botEngine.js";
-import { badRequest } from "../lib/errors.js";
 import { sendData, validate } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -102,12 +101,28 @@ export async function whatsappIncoming(req: Request, res: Response) {
 
   if (!conversation) {
     // Pipeline por defecto + etapa de entrada ("Leads entrantes", type=incoming).
-    const pipeline = await prisma.pipeline.findFirst({
+    let pipeline = await prisma.pipeline.findFirst({
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       include: { stages: { orderBy: { position: "asc" } } },
     });
+    // Si todavía no hay pipeline configurado (BD recién creada / sin seed), creamos uno
+    // mínimo al vuelo para que NUNCA se pierda un mensaje entrante: el chat siempre aparece.
     if (!pipeline || pipeline.stages.length === 0) {
-      throw badRequest("No hay un pipeline con etapas configurado");
+      pipeline = await prisma.pipeline.create({
+        data: {
+          name: "Embudo de ventas",
+          position: 0,
+          stages: {
+            create: [
+              { name: "Leads entrantes", type: "incoming", color: "#8b5cf6", position: 0 },
+              { name: "En conversación", type: "normal", color: "#a78bfa", position: 1 },
+              { name: "Ganado", type: "won", color: "#16a34a", position: 2 },
+              { name: "Perdido", type: "lost", color: "#dc2626", position: 3 },
+            ],
+          },
+        },
+        include: { stages: { orderBy: { position: "asc" } } },
+      });
     }
     const incoming =
       pipeline.stages.find((s) => s.type === "incoming") ?? pipeline.stages[0];

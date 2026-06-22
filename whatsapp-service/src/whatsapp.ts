@@ -17,7 +17,10 @@ import { config } from "./env.js";
 //   useMultiFileAuthState NO es apto para producción (lo dice la propia doc de Baileys);
 //   en prod hay que implementar un AuthenticationState respaldado en BD.
 
-const logger = pino({ level: "silent" });
+// En "silent" Baileys oculta errores internos (descifrado LID, sesiones rotas, init queries).
+// "warn" muestra avisos/errores sin el ruido enorme de las notificaciones de historial (info).
+// Configurable con WA_LOG_LEVEL (p. ej. "info" o "debug" para depurar a fondo).
+const logger = pino({ level: process.env.WA_LOG_LEVEL ?? "warn" });
 
 // Estado en memoria del proceso.
 let sock: WASocket | undefined;
@@ -42,6 +45,14 @@ let generation = 0;
 // Así no se generan códigos en bucle infinito (que consumían CPU/red sin parar).
 const QR_WINDOW_MS = 5 * 60 * 1000;
 let qrWindowTimer: NodeJS.Timeout | undefined;
+
+// ── Marca de agua de mensajes "en vivo" ──
+// Solo reenviamos al backend los mensajes con timestamp >= liveSince (arranque del servicio).
+// Motivo: NO queremos importar el historial previo a la vinculación, pero SÍ todo mensaje
+// nuevo. No podemos fiarnos de upsert.type === 'notify': Baileys entrega como 'append' los
+// mensajes que estaban en cola/offline (típico de los primeros mensajes justo tras escanear
+// el QR), y si filtráramos por 'notify' se perderían y el chat nunca aparecería.
+const liveSince = Math.floor(Date.now() / 1000);
 
 // ── Reconexión con backoff (sólo para sesión YA vinculada que se cae) ──
 const RECONNECT_BASE_MS = 1_000;
@@ -172,7 +183,10 @@ async function forwardIncoming(payload: {
       headers: { "content-type": "application/json", "x-internal-secret": config.internalSecret },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) console.warn(`[wa] El backend rechazó el incoming (status ${res.status}).`);
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.warn(`[wa] El backend rechazó el incoming (status ${res.status}). ${detail}`);
+    }
   } catch (err) {
     console.warn("[wa] No se pudo reenviar el mensaje entrante al backend.", err);
   }
@@ -184,6 +198,7 @@ async function clearAuth(): Promise<void> {
 
 async function connect(): Promise<void> {
   const myGen = ++generation;
+  console.log(`[wa] connect() gen=${myGen} — handler LID-aware activo (build diag).`);
   clearReconnect();
 
   // Cierra cualquier socket previo antes de crear uno nuevo (evita sockets colgando).
@@ -269,27 +284,50 @@ async function connect(): Promise<void> {
   });
 
   // Recepción de mensajes entrantes -> reenvío al backend.
+  // No filtramos por upsert.type: aceptamos 'notify' y 'append' (mensajes offline/en cola).
+  // El historial previo a la vinculación se descarta por timestamp (< liveSince).
   sock.ev.on("messages.upsert", async (upsert) => {
+    // DIAGNÓSTICO: log incondicional ANTES del guard, para ver si el evento dispara siquiera.
+    console.log(
+      `[wa] messages.upsert disparó: type=${upsert.type} count=${upsert.messages.length} (gen ${myGen}/${generation}).`,
+    );
     if (myGen !== generation) return;
-    if (upsert.type !== "notify") return; // sólo mensajes nuevos
 
     for (const m of upsert.messages) {
-      const jid = m.key.remoteJid ?? undefined;
-      // Ignora salientes (fromMe) y todo lo que no sea chat individual (grupos, broadcast, status).
-      if (!jid || m.key.fromMe) continue;
-      if (!jid.endsWith("@s.whatsapp.net")) continue;
+      const rawJid = m.key.remoteJid ?? undefined;
+      if (!rawJid || m.key.fromMe) continue; // ignora salientes
+
+      // Diagnóstico: registra TODO mensaje entrante ANTES de filtrar (jid + senderPn + tipo).
+      console.log(
+        `[wa] upsert(${upsert.type}) remoteJid=${rawJid} senderPn=${m.key.senderPn ?? "-"}`,
+      );
+
+      // Chat individual = @s.whatsapp.net (número) o @lid (cuenta migrada a LID por WhatsApp).
+      // Excluye grupos (@g.us), difusión/estados (@broadcast) y newsletters (@newsletter).
+      const isIndividual = rawJid.endsWith("@s.whatsapp.net") || rawJid.endsWith("@lid");
+      if (!isIndividual) continue;
+
+      // Si llega como @lid, el número real (jid PN) viene en key.senderPn. Lo preferimos para
+      // identificar SIEMPRE al contacto por su número y no duplicar la conversación. Si faltara,
+      // caemos al propio jid para que el chat aparezca igual (mejor eso que perder el mensaje).
+      const fromJid = rawJid.endsWith("@lid") ? (m.key.senderPn ?? rawJid) : rawJid;
+
+      // Solo mensajes nuevos (desde que arrancó el servicio): el historial previo se ignora.
+      const timestamp = toUnix(m.messageTimestamp);
+      if (timestamp < liveSince) continue;
 
       // Texto y media (imagen/audio/video/archivo). El backend guarda tipo + caption/placeholder.
       const classified = classifyMessage(m.message);
       if (!classified) continue; // tipo aún no soportado: lo ignoramos sin romper.
 
+      console.log(`[wa] Mensaje entrante de ${fromJid} (${upsert.type}); reenviando al backend.`);
       await forwardIncoming({
-        from: jid,
+        from: fromJid,
         pushName: m.pushName ?? null,
         text: classified.text,
         messageType: classified.messageType,
         externalMessageId: m.key.id ?? null,
-        timestamp: toUnix(m.messageTimestamp),
+        timestamp,
       });
     }
   });

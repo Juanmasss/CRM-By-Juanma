@@ -21,7 +21,17 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   });
 
   if (!res.ok) {
-    throw new ApiError(`Request failed: ${path}`, res.status);
+    // El backend responde los errores como { error: { message } }: lo extraemos para mostrarlo.
+    let message = `Request failed: ${path}`;
+    try {
+      const data = (await res.json()) as { error?: { message?: string } };
+      if (data?.error?.message) {
+        message = data.error.message;
+      }
+    } catch {
+      /* respuesta sin cuerpo JSON: dejamos el mensaje por defecto */
+    }
+    throw new ApiError(message, res.status);
   }
 
   return (await res.json()) as T;

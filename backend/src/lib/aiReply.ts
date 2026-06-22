@@ -1,6 +1,7 @@
 import { MessageDirection, MessageStatus, SenderType } from "@prisma/client";
 import type OpenAI from "openai";
 
+import { isReplyWindowOpen } from "./messagingWindow.js";
 import { getOpenRouter, openRouterModel } from "./openrouter.js";
 import { prisma } from "./prisma.js";
 import { sendViaService } from "./waService.js";
@@ -45,6 +46,12 @@ export async function runAiReply({ conversationId }: { conversationId: string })
       orderBy: { createdAt: "desc" },
     });
     if (!last || last.senderType !== SenderType.contact || !last.body) return;
+
+    // Ventana de 24h: fuera de plazo no se responde (no se puede escribir al contacto).
+    if (!(await isReplyWindowOpen(conversationId))) {
+      console.warn(`[ai] Ventana de 24h cerrada en conversación ${conversationId}; omito.`);
+      return;
+    }
 
     // Rate limit por conversación.
     if (recentCount(conversationId) >= MAX_REPLIES_PER_MINUTE) {
